@@ -1,0 +1,1 @@
+MSG_WELCOME = "placeholder"
