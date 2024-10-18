@@ -29,8 +29,8 @@ def wipe():
               help="Output directory for multi-Fasta file")
 @click.option("-g", "--gap", default=None,
               help='Fill sequence gaps with a string, use "*" to indicate repeats, e.g., "N*20"')
-@click.option("-f", "--filt", default=None
-              help='Exclude sequences with any of the comma-delimited words in title, e.g., "plasmid,phage"')
+@click.option("-f", "--filt", default=None,
+              help="Exclude sequences with any of the comma-delimited words in title, e.g., 'plasmid,phage'")
 # fmt: on
 def linearize(metadata, ext, outdir, gap, filt):
     linearize_genomes(metadata, ext, outdir, gap, filt)
