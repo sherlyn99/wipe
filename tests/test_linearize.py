@@ -36,6 +36,120 @@ class LinearizeTests(unittest.TestCase):
         obs = filter_contig_name("plasmid,phage", ">contig2_phAge_C2")
         self.assertEqual(exp, obs)
 
+    def test_linearize_single_genome_gzip_ncbi_noconcat_nofilt_empty_contig(
+        self,
+    ):
+        test_inpath = "./tests/data/GCF_000981955.1_ASM98195v1_genomic_empty"
+        test_ext = ".fna.gz"
+        test_outdir = tempfile.mkdtemp()
+        test_gid = None
+        test_gap = None
+        test_filt = None
+
+        try:
+            linearize_single_genome(
+                test_inpath,
+                test_ext,
+                test_outdir,
+                test_gid,
+                test_gap,
+                test_filt,
+            )
+
+            outpath = os.path.join(test_outdir, "G000981955", "G000981955.fna")
+            self.assertTrue(os.path.exists(outpath), "Output file not found.")
+
+            with open(outpath, "r") as f:
+                obs = f.read()
+                exp = (
+                    ">G000981955_contig_1_plasmid_at_the_start\n"
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG\n"
+                    ">G000981955_contig_2\n"
+                    "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC\n"
+                    ">G000981955_contig_3_phage_in_the_middle\n"
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+                    ">G000981955_contig_3\n"
+                    "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG\n"
+                    ">G000981955_contig_4_plasmid_at_the_end\n"
+                    "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC\n"
+                )
+                self.assertEqual(
+                    obs,
+                    exp,
+                    "Output content does not match expected content.",
+                )
+
+            logpath = os.path.join(
+                test_outdir, "G000981955", "linearization.log"
+            )
+            with open(logpath, "r") as f:
+                obs = f.read()
+                exp = (
+                    f"Wrote 5 contigs (240 characters in total) into {test_outdir}/G000981955/G000981955.fna\n"
+                    "\n3 contigs were empty:\n['>contig_empty_1', '>contig_empty_2', '>contig_empty_5']\n"
+                )
+                self.assertAlmostEqual(
+                    obs, exp, "Log does not match expected log content."
+                )
+        finally:
+            shutil.rmtree(test_outdir)
+
+    def test_linearize_single_genome_gzip_nonncbi_noconcat_nofilt_empty_contig(
+        self,
+    ):
+        test_inpath = "./tests/data/GCF_000981955.1_ASM98195v1_genomic_empty"
+        test_ext = ".fna.gz"
+        test_outdir = tempfile.mkdtemp()
+        test_gid = "G001"
+        test_gap = None
+        test_filt = None
+
+        try:
+            linearize_single_genome(
+                test_inpath,
+                test_ext,
+                test_outdir,
+                test_gid,
+                test_gap,
+                test_filt,
+            )
+
+            outpath = os.path.join(test_outdir, "G001", "G001.fna")
+            self.assertTrue(os.path.exists(outpath), "Output file not found.")
+
+            with open(outpath, "r") as f:
+                obs = f.read()
+                exp = (
+                    ">G001_contig_1_plasmid_at_the_start\n"
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG\n"
+                    ">G001_contig_2\n"
+                    "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC\n"
+                    ">G001_contig_3_phage_in_the_middle\n"
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+                    ">G001_contig_3\n"
+                    "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG\n"
+                    ">G001_contig_4_plasmid_at_the_end\n"
+                    "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC\n"
+                )
+                self.assertEqual(
+                    obs,
+                    exp,
+                    "Output content does not match expected content.",
+                )
+
+            logpath = os.path.join(test_outdir, "G001", "linearization.log")
+            with open(logpath, "r") as f:
+                obs = f.read()
+                exp = (
+                    f"Wrote 5 contigs (240 characters in total) into {test_outdir}/G001/G001.fna\n"
+                    "\n3 contigs were empty:\n['>contig_empty_1', '>contig_empty_2', '>contig_empty_5']\n"
+                )
+                self.assertAlmostEqual(
+                    obs, exp, "Log does not match expected log content."
+                )
+        finally:
+            shutil.rmtree(test_outdir)
+
     def test_linearize_single_genome_ncbi_noconcat_nofilt(self):
         test_inpath = "./tests/data/GCF_000981955.1_ASM98195v1_genomic"
         test_ext = ".fna"

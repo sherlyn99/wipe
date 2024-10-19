@@ -64,7 +64,8 @@ def linearize_single_genome(
             fo_log.write("Input file does not exist")
         return
 
-    outpath = join(outdir, f"{gid}.{ext}")
+    out_ext = ext.rstrip(".gz").rstrip(".bz2").rstrip(".xz").rstrip(".lz")
+    outpath = join(outdir, f"{gid}.{out_ext}")
     os.makedirs(outdir, exist_ok=True)
 
     with read(inpath) as fi, open(outpath, "w") as fo:
