@@ -4,7 +4,7 @@ import unittest
 import tempfile
 from wipe.modules.linearize import (
     generate_gap_string,
-    filter_contig_name,
+    should_filter_contig_name,
     linearize_single_genome,
     linearize_genomes,
 )
@@ -21,19 +21,19 @@ class LinearizeTests(unittest.TestCase):
         obs = generate_gap_string("20N")
         self.assertEqual(exp, obs)
 
-    def test_filter_contig_name_plasmid(self):
+    def test_should_filter_contig_name_plasmid(self):
         exp = True
-        obs = filter_contig_name("plasmid,phage", ">contig1_plasmid_C1")
+        obs = should_filter_contig_name("plasmid,phage", ">contig1_plasmid_C1")
         self.assertEqual(exp, obs)
 
-    def test_filter_contig_name_phage(self):
+    def test_should_filter_contig_name_phage(self):
         exp = True
-        obs = filter_contig_name("plasmid,phage", ">contig2_phage_C2")
+        obs = should_filter_contig_name("plasmid,phage", ">contig2_phage_C2")
         self.assertEqual(exp, obs)
 
-    def test_filter_contig_name_ignore_case(self):
+    def test_should_filter_contig_name_ignore_case(self):
         exp = True
-        obs = filter_contig_name("plasmid,phage", ">contig2_phAge_C2")
+        obs = should_filter_contig_name("plasmid,phage", ">contig2_phAge_C2")
         self.assertEqual(exp, obs)
 
     def test_linearize_single_genome_gzip_ncbi_noconcat_nofilt_empty_contig(
