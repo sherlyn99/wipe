@@ -1,6 +1,6 @@
 import click
 from wipe.modules.constants import MSG_WELCOME
-from wipe.modules.linearize_old import linearize_genomes
+from wipe.modules.linearize import linearize_genomes
 
 # takes in a directory of genomes
 # linearize
