@@ -1,9 +1,14 @@
 import os
 import re
 import sys
+import gzip
 import skbio
 from os.path import join, exists
-from wipe.modules.utils import logger, read
+from wipe.modules.utils import (
+    write_json_log,
+    load_md,
+    check_duplicated_genome_ids,
+)
 
 
 def generate_gap_string(gap):
@@ -44,38 +49,45 @@ def generate_inpath_outpath(inpath, ext, outdir, gid):
     gid = gid or infer_gid_ncbi(inpath)
     ext = ext.lstrip(".")
     inpath = inpath + "." + ext
-    outdir = join(outdir, gid)
+    outdir = join(outdir, gid[0], gid[1:4], gid[4:7], gid[7:])
     out_ext = ext.rstrip(".gz").rstrip(".bz2").rstrip(".xz").rstrip(".lz")
-    outpath = join(outdir, f"{gid}.{out_ext}")
+    outpath = join(outdir, f"{gid}.{out_ext}.gz")
     return gid, inpath, outdir, outpath
 
 
-def generate_log_msg(n_written, n_char, n_filtered, outpath):
-    log_message = (
-        f"Wrote {n_written} contigs ({n_char} characters in total) into {outpath}.\n"
-        + (f"{n_filtered} contigs were filtered.\n")
-    )
-    return log_message
+def generate_log_entries(n_written, n_char, n_filtered, outpath):
+    return {
+        "contigs_written": n_written,
+        "char_written": n_char,
+        "contigs_filtered": n_filtered,
+        "outpath": outpath,
+    }
 
 
 def read_fasta(inpath):
-    try:
-        records = {}
-        for seq in skbio.read(inpath, format="fasta"):
-            header = (
-                f">{seq.metadata['id']} {seq.metadata.get('description', '')}"
-            ).strip()
-            records[header] = seq
-    except Exception as e:
-        logger.error(f"Reading {inpath} failed due to the error {str(e)}.")
-        sys.exit(1)
+    records = {}
+    for seq in skbio.read(inpath, format="fasta"):
+        header = (
+            f">{seq.metadata['id']} {seq.metadata.get('description', '')}"
+        ).strip()
+        records[header] = seq
     return records
 
 
-def write_log(outdir, filename, message):
-    """Writes a log message to the linearization log."""
-    with open(f"{outdir}/{filename}", "w") as fo_log:
-        fo_log.write(message)
+def check_outputs(outdir, outpath):
+    """Check if expected outputs already exist."""
+    genome_file_exists = False
+    log_file_exists = False
+    if exists(outdir):
+        if exists(outpath):
+            genome_file_exists = True
+        if exists(join(outdir, "linearization_stats.json.gz")):
+            log_file_exists = True
+    return genome_file_exists and log_file_exists
+
+
+def generate_outdir(outdir, gid):
+    return join(outdir, gid[0], gid[1:4], gid[4:7], gid[7:])
 
 
 def linearize_single_genome(
@@ -84,16 +96,21 @@ def linearize_single_genome(
     gid, inpath, outdir, outpath = generate_inpath_outpath(
         inpath, ext, outdir, gid
     )
-    os.makedirs(outdir, exist_ok=True)
 
+    # Skip if expected outputs already exist
+    if check_outputs(outdir, outpath):
+        return
+
+    # Error out if the input path does not exist
     if not exists(inpath):
-        logger.error(f"Input file {inpath} does not exist.")
-        sys.exit(1)
+        raise FileNotFoundError(f"Input file {inpath} does not exist.")
+
+    os.makedirs(outdir, exist_ok=True)
 
     linearized = read_fasta(inpath)
     n_written, n_char, n_filtered = 0, 0, 0
 
-    with open(outpath, "w") as output_file:
+    with gzip.open(outpath, "wt") as output_file:
         if gap:
             output_file.write(f">{gid}\n")
             gap_string = generate_gap_string(gap)
@@ -119,30 +136,33 @@ def linearize_single_genome(
                 else:
                     n_filtered += 1
 
-        log_msg = generate_log_msg(n_written, n_char, n_filtered, outpath)
-        write_log(outdir, "linearization.log", log_msg)
-
-    return
+        log_data = generate_log_entries(n_written, n_char, n_filtered, outpath)
+        write_json_log(
+            log_data, outdir, "linearization_stats.json.gz", append=True
+        )
 
 
 def linearize_genomes(metadata, ext, outdir, gap, filt):
-    gid_set = set()
-    with read(metadata) as fi:
-        for line in fi:
-            line = line.strip()
-            if not line:
-                continue
+    md_df = load_md(metadata)
 
-            fields = list(map(str.strip, line.split("\t")))
-            inpath = fields[0]
-            gid = fields[1] if len(fields) == 2 else infer_gid_ncbi(inpath)
+    if "genome_id" not in md_df.columns:
+        md_df["genome_id"] = md_df["filepath"].apply(infer_gid_ncbi)
 
-            if gid in gid_set:
-                write_log(
-                    outdir,
-                    "linearization_all.log",
-                    f"Dupliacted genome ID: {gid} with input path {inpath}\n",
-                )
-            gid_set.add(gid)
+    try:
+        check_duplicated_genome_ids(md_df)
+    except Exception as e:
+        log_data = {"input_path": "NA", "error": f"{e}"}
+        write_json_log(log_data, outdir, "linearization.err.gz", append=True)
+        sys.exit(1)
 
+    for row in md_df.itertuples(index=False):
+        inpath = row.filepath.strip()
+        gid = row.genome_id.strip()
+
+        try:
             linearize_single_genome(inpath, ext, outdir, gid, gap, filt)
+        except Exception as e:
+            log_data = {"input_path": inpath, "error": f"{e}"}
+            write_json_log(
+                log_data, outdir, "linearization_err.json.gz", append=True
+            )

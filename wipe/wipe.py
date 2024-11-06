@@ -34,3 +34,7 @@ def wipe():
 # fmt: on
 def linearize(metadata, ext, outdir, gap, filt):
     linearize_genomes(metadata, ext, outdir, gap, filt)
+
+
+## BASH
+# wipe linearize -m <modified metadata>

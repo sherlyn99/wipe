@@ -1,20 +1,22 @@
 import os
+import gzip
 import shutil
 import unittest
 import tempfile
 import warnings
+from skbio.io._exception import FASTAFormatError
 from skbio.io import FormatIdentificationWarning
 from wipe.modules.linearize import (
     generate_gap_string,
     should_filter_contig_name,
     infer_gid_ncbi,
     generate_inpath_outpath,
-    generate_log_msg,
+    generate_log_entries,
     read_fasta,
+    generate_outdir,
     linearize_single_genome,
     linearize_genomes,
 )
-from wipe.modules.utils import logger
 
 
 class LinearizeTests(unittest.TestCase):
@@ -86,8 +88,8 @@ class LinearizeTests(unittest.TestCase):
         )
         exp_gid = "G000000001"
         exp_inpath = "/path/to/GCA_000981955.1_ASM98195v1_genomic.fna"
-        exp_outdir = "/path/to/outdir/G000000001"
-        exp_outpath = "/path/to/outdir/G000000001/G000000001.fna"
+        exp_outdir = "/path/to/outdir/G/000/000/001"
+        exp_outpath = "/path/to/outdir/G/000/000/001/G000000001.fna.gz"
         self.assertEqual(obs_gid, exp_gid)
         self.assertEqual(obs_inpath, exp_inpath)
         self.assertEqual(obs_outdir, exp_outdir)
@@ -103,8 +105,8 @@ class LinearizeTests(unittest.TestCase):
         )
         exp_gid = "G000000001"
         exp_inpath = "/path/to/GCA_000981955.1_ASM98195v1_genomic.fa.gz"
-        exp_outdir = "/path/to/outdir/G000000001"
-        exp_outpath = "/path/to/outdir/G000000001/G000000001.fa"
+        exp_outdir = "/path/to/outdir/G/000/000/001"
+        exp_outpath = "/path/to/outdir/G/000/000/001/G000000001.fa.gz"
         self.assertEqual(obs_gid, exp_gid)
         self.assertEqual(obs_inpath, exp_inpath)
         self.assertEqual(obs_outdir, exp_outdir)
@@ -120,8 +122,8 @@ class LinearizeTests(unittest.TestCase):
         )
         exp_gid = "G000000001"
         exp_inpath = "/path/to/GCA_000981955.1_ASM98195v1_genomic.fa.xz"
-        exp_outdir = "/path/to/outdir/G000000001"
-        exp_outpath = "/path/to/outdir/G000000001/G000000001.fa"
+        exp_outdir = "/path/to/outdir/G/000/000/001"
+        exp_outpath = "/path/to/outdir/G/000/000/001/G000000001.fa.gz"
         self.assertEqual(obs_gid, exp_gid)
         self.assertEqual(obs_inpath, exp_inpath)
         self.assertEqual(obs_outdir, exp_outdir)
@@ -137,22 +139,27 @@ class LinearizeTests(unittest.TestCase):
         )
         exp_gid = "G000981955"
         exp_inpath = "/path/to/GCA_000981955.1_ASM98195v1_genomic.fa.xz"
-        exp_outdir = "/path/to/outdir/G000981955"
-        exp_outpath = "/path/to/outdir/G000981955/G000981955.fa"
+        exp_outdir = "/path/to/outdir/G/000/981/955"
+        exp_outpath = "/path/to/outdir/G/000/981/955/G000981955.fa.gz"
         self.assertEqual(obs_gid, exp_gid)
         self.assertEqual(obs_inpath, exp_inpath)
         self.assertEqual(obs_outdir, exp_outdir)
         self.assertEqual(obs_outpath, exp_outpath)
 
-    def test_generate_log_msg(self):
+    def test_generate_log_entries(self):
         test_n_written = 100
         test_n_char = 10000
         test_n_filtered = 50
         test_outpath = "/path/to/outpath"
-        obs = generate_log_msg(
+        obs = generate_log_entries(
             test_n_written, test_n_char, test_n_filtered, test_outpath
         )
-        exp = "Wrote 100 contigs (10000 characters in total) into /path/to/outpath.\n50 contigs were filtered.\n"
+        exp = {
+            "contigs_written": 100,
+            "char_written": 10000,
+            "contigs_filtered": 50,
+            "outpath": "/path/to/outpath",
+        }
         self.assertEqual(obs, exp)
 
     def test_read_fasta(self):
@@ -181,29 +188,25 @@ class LinearizeTests(unittest.TestCase):
 
     def test_read_fasta_empty(self):
         test_inpath = (
-            "./tests/data/GCF_000981955.1_ASM98195v1_genomic_empty.fna"
+            "./tests/data/GCF_000981956.1_ASM98195v1_genomic_empty.fna"
         )
-        with self.assertRaises(SystemExit) as context:
+        with self.assertRaises(FASTAFormatError) as context:
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
-                with self.assertLogs(logger, level="ERROR") as log:
-                    obs_seqs = [seq for seq in read_fasta(test_inpath)]
-                    # verify skbio warning
-                    self.assertTrue(
-                        any(
-                            issubclass(
-                                warn.category, FormatIdentificationWarning
-                            )
-                            for warn in w
-                        )
+                obs_seqs = [seq for seq in read_fasta(test_inpath)]
+                self.assertTrue(
+                    any(
+                        issubclass(warn.category, FormatIdentificationWarning)
+                        for warn in w
                     )
-                    # verify wipe logger
-                    self.assertIn(
-                        f"Reading {test_inpath} failed due to the error",
-                        log.output[0],
-                    )
-        # verify sys.exit(1)
-        self.assertEqual(context.exception.code, 1)
+                )
+
+    def test_generate_outdir(self):
+        test_outdir = "/parent/path"
+        test_gid = "G000981955"
+        obs = generate_outdir(test_outdir, test_gid)
+        exp = "/parent/path/G/000/981/955"
+        self.assertEqual(obs, exp)
 
     def test_linearize_single_genome_ncbi_noconcat_nofilt(self):
         test_inpath = "./tests/data/GCF_000981955.1_ASM98195v1_genomic"
@@ -223,10 +226,14 @@ class LinearizeTests(unittest.TestCase):
                 test_filt,
             )
 
-            outpath = os.path.join(test_outdir, "G000981955", "G000981955.fna")
-            self.assertTrue(os.path.exists(outpath), "Output file not found.")
+            outpath = os.path.join(
+                test_outdir, "G", "000", "981", "955", "G000981955.fna.gz"
+            )
+            self.assertTrue(
+                os.path.exists(outpath), f"Output file not found: {outpath}."
+            )
 
-            with open(outpath, "r") as f:
+            with gzip.open(outpath, "rt") as f:
                 obs = f.read()
                 exp = (
                     ">G000981955_contig_1_plasmid_at_the_start\n"
@@ -247,17 +254,17 @@ class LinearizeTests(unittest.TestCase):
                 )
 
             logpath = os.path.join(
-                test_outdir, "G000981955", "linearization.log"
+                test_outdir,
+                "G",
+                "000",
+                "981",
+                "955",
+                "linearization_stats.json.gz",
             )
-            with open(logpath, "r") as f:
-                obs = f.read()
-                exp = (
-                    f"Wrote 5 contigs (240 characters in total) into {test_outdir}/G000981955/G000981955.fna.\n"
-                    "0 contigs were filtered.\n"
-                )
-                self.assertAlmostEqual(
-                    obs, exp, "Log does not match expected log content."
-                )
+            self.assertTrue(
+                os.path.exists(logpath),
+                f"Stats log file not found: {logpath}.",
+            )
         finally:
             shutil.rmtree(test_outdir)
 
@@ -279,10 +286,14 @@ class LinearizeTests(unittest.TestCase):
                 test_filt,
             )
 
-            outpath = os.path.join(test_outdir, "G000981955", "G000981955.fna")
-            self.assertTrue(os.path.exists(outpath), "Output file not found.")
+            outpath = os.path.join(
+                test_outdir, "G", "000", "981", "955", "G000981955.fna.gz"
+            )
+            self.assertTrue(
+                os.path.exists(outpath), f"Output file not found: {outpath}."
+            )
 
-            with open(outpath, "r") as f:
+            with gzip.open(outpath, "rt") as f:
                 obs = f.read()
                 exp = (
                     ">G000981955_contig_2\n"
@@ -297,17 +308,17 @@ class LinearizeTests(unittest.TestCase):
                 )
 
             logpath = os.path.join(
-                test_outdir, "G000981955", "linearization.log"
+                test_outdir,
+                "G",
+                "000",
+                "981",
+                "955",
+                "linearization_stats.json.gz",
             )
-            with open(logpath, "r") as f:
-                obs = f.read()
-                exp = (
-                    f"Wrote 2 contigs (90 characters in total) into {test_outdir}/G000981955/G000981955.fna.\n"
-                    "3 contigs were filtered.\n"
-                )
-                self.assertAlmostEqual(
-                    obs, exp, "Log does not match expected log content."
-                )
+            self.assertTrue(
+                os.path.exists(logpath),
+                f"Stats log file not found: {logpath}.",
+            )
         finally:
             shutil.rmtree(test_outdir)
 
@@ -329,10 +340,14 @@ class LinearizeTests(unittest.TestCase):
                 test_filt,
             )
 
-            outpath = os.path.join(test_outdir, "G000981955", "G000981955.fna")
-            self.assertTrue(os.path.exists(outpath), "Output file not found.")
+            outpath = os.path.join(
+                test_outdir, "G", "000", "981", "955", "G000981955.fna.gz"
+            )
+            self.assertTrue(
+                os.path.exists(outpath), f"Output file not found: {outpath}."
+            )
 
-            with open(outpath, "r") as f:
+            with gzip.open(outpath, "rt") as f:
                 obs = f.read()
                 exp = (
                     ">G000981955\n"
@@ -347,17 +362,17 @@ class LinearizeTests(unittest.TestCase):
                 )
 
             logpath = os.path.join(
-                test_outdir, "G000981955", "linearization.log"
+                test_outdir,
+                "G",
+                "000",
+                "981",
+                "955",
+                "linearization_stats.json.gz",
             )
-            with open(logpath, "r") as f:
-                obs = f.read()
-                exp = (
-                    f"Wrote 2 contigs (110 characters in total) into {test_outdir}/G000981955/G000981955.fna.\n"
-                    "3 contigs were filtered.\n"
-                )
-                self.assertAlmostEqual(
-                    obs, exp, "Log does not match expected log content."
-                )
+            self.assertTrue(
+                os.path.exists(logpath),
+                f"Stats log file not found: {logpath}.",
+            )
         finally:
             shutil.rmtree(test_outdir)
 
@@ -379,10 +394,12 @@ class LinearizeTests(unittest.TestCase):
                 test_filt,
             )
 
-            outpath = os.path.join(test_outdir, "G000981955", "G000981955.fna")
+            outpath = os.path.join(
+                test_outdir, "G", "000", "981", "955", "G000981955.fna.gz"
+            )
             self.assertTrue(os.path.exists(outpath), "Output file not found.")
 
-            with open(outpath, "r") as f:
+            with gzip.open(outpath, "rt") as f:
                 obs = f.read()
                 exp = (
                     ">G000981955\n"
@@ -402,17 +419,17 @@ class LinearizeTests(unittest.TestCase):
                     "Output content does not match expected content.",
                 )
             logpath = os.path.join(
-                test_outdir, "G000981955", "linearization.log"
+                test_outdir,
+                "G",
+                "000",
+                "981",
+                "955",
+                "linearization_stats.json.gz",
             )
-            with open(logpath, "r") as f:
-                obs = f.read()
-                exp = (
-                    f"Wrote 5 contigs (320 characters in total) into {test_outdir}/G000981955/G000981955.fna.\n"
-                    "0 contigs were filtered.\n"
-                )
-                self.assertAlmostEqual(
-                    obs, exp, "Log does not match expected log content."
-                )
+            self.assertTrue(
+                os.path.exists(logpath),
+                f"Stats log file not found: {logpath}.",
+            )
         finally:
             shutil.rmtree(test_outdir)
 
@@ -434,10 +451,14 @@ class LinearizeTests(unittest.TestCase):
                 test_filt,
             )
 
-            outpath = os.path.join(test_outdir, "H000000001", "H000000001.fna")
-            self.assertTrue(os.path.exists(outpath), "Output file not found.")
+            outpath = os.path.join(
+                test_outdir, "H", "000", "000", "001", "H000000001.fna.gz"
+            )
+            self.assertTrue(
+                os.path.exists(outpath), f"Output file not found: {outpath}."
+            )
 
-            with open(outpath, "r") as f:
+            with gzip.open(outpath, "rt") as f:
                 obs = f.read()
                 exp = (
                     ">H000000001\n"
@@ -452,17 +473,17 @@ class LinearizeTests(unittest.TestCase):
                 )
 
             logpath = os.path.join(
-                test_outdir, "H000000001", "linearization.log"
+                test_outdir,
+                "H",
+                "000",
+                "000",
+                "001",
+                "linearization_stats.json.gz",
             )
-            with open(logpath, "r") as f:
-                obs = f.read()
-                exp = (
-                    f"Wrote 2 contigs (110 characters in total) into {test_outdir}/H000000001/H000000001.fna.\n"
-                    "3 contigs were filtered.\n"
-                )
-                self.assertAlmostEqual(
-                    obs, exp, "Log does not match expected log content."
-                )
+            self.assertTrue(
+                os.path.exists(logpath),
+                f"Stats log file not found: {logpath}.",
+            )
         finally:
             shutil.rmtree(test_outdir)
 
@@ -484,10 +505,14 @@ class LinearizeTests(unittest.TestCase):
                 test_filt,
             )
 
-            outpath = os.path.join(test_outdir, "H000000001", "H000000001.fna")
-            self.assertTrue(os.path.exists(outpath), "Output file not found.")
+            outpath = os.path.join(
+                test_outdir, "H", "000", "000", "001", "H000000001.fna.gz"
+            )
+            self.assertTrue(
+                os.path.exists(outpath), f"Output file not found: {outpath}."
+            )
 
-            with open(outpath, "r") as f:
+            with gzip.open(outpath, "rt") as f:
                 obs = f.read()
                 exp = (
                     ">H000000001\n"
@@ -502,17 +527,17 @@ class LinearizeTests(unittest.TestCase):
                 )
 
             logpath = os.path.join(
-                test_outdir, "H000000001", "linearization.log"
+                test_outdir,
+                "H",
+                "000",
+                "000",
+                "001",
+                "linearization_stats.json.gz",
             )
-            with open(logpath, "r") as f:
-                obs = f.read()
-                exp = (
-                    f"Wrote 2 contigs (110 characters in total) into {test_outdir}/H000000001/H000000001.fna.\n"
-                    "3 contigs were filtered.\n"
-                )
-                self.assertAlmostEqual(
-                    obs, exp, "Log does not match expected log content."
-                )
+            self.assertTrue(
+                os.path.exists(logpath),
+                f"Stats log file not found: {logpath}.",
+            )
         finally:
             shutil.rmtree(test_outdir)
 
@@ -528,14 +553,34 @@ class LinearizeTests(unittest.TestCase):
             )
 
             paths = [
-                os.path.join(test_outdir, "G000000001", "G000000001.fna"),
-                os.path.join(test_outdir, "G000000001", "linearization.log"),
-                os.path.join(test_outdir, "G000000002", "G000000002.fna"),
-                os.path.join(test_outdir, "G000000001", "linearization.log"),
+                os.path.join(
+                    test_outdir, "G", "000", "000", "001", "G000000001.fna.gz"
+                ),
+                os.path.join(
+                    test_outdir,
+                    "G",
+                    "000",
+                    "000",
+                    "001",
+                    "linearization_stats.json.gz",
+                ),
+                os.path.join(
+                    test_outdir, "G", "000", "000", "002", "G000000002.fna.gz"
+                ),
+                os.path.join(
+                    test_outdir,
+                    "G",
+                    "000",
+                    "000",
+                    "001",
+                    "linearization_stats.json.gz",
+                ),
             ]
 
             for p in paths:
-                self.assertTrue(os.path.exists(p), "Output file not found.")
+                self.assertTrue(
+                    os.path.exists(p), f"Output file not found: {p}."
+                )
 
         finally:
             shutil.rmtree(test_outdir)
@@ -552,12 +597,70 @@ class LinearizeTests(unittest.TestCase):
             )
 
             paths = [
-                os.path.join(test_outdir, "G000981955", "G000981955.fna"),
-                os.path.join(test_outdir, "G000981955", "linearization.log"),
+                os.path.join(
+                    test_outdir, "G", "000", "981", "955", "G000981955.fna.gz"
+                ),
+                os.path.join(
+                    test_outdir,
+                    "G",
+                    "000",
+                    "981",
+                    "955",
+                    "linearization_stats.json.gz",
+                ),
             ]
 
             for p in paths:
-                self.assertTrue(os.path.exists(p), "Output file not found.")
+                self.assertTrue(
+                    os.path.exists(p), f"Output file not found: {p}."
+                )
+
+        finally:
+            shutil.rmtree(test_outdir)
+
+    def test_linearize_genomes_nogid_error(self):
+        test_metadata = "./tests/data/metadata_nogid_error.tsv"
+        test_ext = "fna"
+        test_outdir = tempfile.mkdtemp()
+        test_gap = "N*20"
+        test_filt = None
+        try:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                linearize_genomes(
+                    test_metadata, test_ext, test_outdir, test_gap, test_filt
+                )
+
+                paths = [
+                    os.path.join(
+                        test_outdir,
+                        "G",
+                        "000",
+                        "981",
+                        "955",
+                        "G000981955.fna.gz",
+                    ),
+                    os.path.join(
+                        test_outdir,
+                        "G",
+                        "000",
+                        "981",
+                        "955",
+                        "linearization_stats.json.gz",
+                    ),
+                    os.path.join(test_outdir, "linearization_err.json.gz"),
+                ]
+
+                for p in paths:
+                    self.assertTrue(
+                        os.path.exists(p), f"Output file not found: {p}."
+                    )
+                self.assertTrue(
+                    any(
+                        issubclass(warn.category, FormatIdentificationWarning)
+                        for warn in w
+                    )
+                )
 
         finally:
             shutil.rmtree(test_outdir)
@@ -570,26 +673,19 @@ class LinearizeTests(unittest.TestCase):
         test_filt = None
 
         try:
-            linearize_genomes(
-                test_metadata, test_ext, test_outdir, test_gap, test_filt
-            )
-
-            paths = [
-                os.path.join(test_outdir, "G000981955", "G000981955.fna"),
-                os.path.join(test_outdir, "G000981955", "linearization.log"),
-                os.path.join(test_outdir, "linearization_all.log"),
-            ]
-            for p in paths:
-                self.assertTrue(os.path.exists(p), "Output file not found.")
-
-            with open(
-                os.path.join(test_outdir, "linearization_all.log"), "r"
-            ) as f:
-                obs = f.read()
-                exp = "Dupliacted genome ID: G000981955 with input path ./tests/data/GCF_000981955.1_ASM98195v1_genomic\n"
-                self.assertAlmostEqual(
-                    obs, exp, "Log does not match expected log content."
+            with self.assertRaises(SystemExit) as context:
+                linearize_genomes(
+                    test_metadata, test_ext, test_outdir, test_gap, test_filt
                 )
+
+                paths = [
+                    os.path.join(test_outdir, "linearization_err.json.gz"),
+                ]
+                for p in paths:
+                    self.assertTrue(
+                        os.path.exists(p), f"Output file not found: {p}."
+                    )
+            self.assertEqual(context.exception.code, 1)
         finally:
             shutil.rmtree(test_outdir)
 
@@ -601,26 +697,19 @@ class LinearizeTests(unittest.TestCase):
         test_filt = None
 
         try:
-            linearize_genomes(
-                test_metadata, test_ext, test_outdir, test_gap, test_filt
-            )
-
-            paths = [
-                os.path.join(test_outdir, "G000000001", "G000000001.fna"),
-                os.path.join(test_outdir, "G000000001", "linearization.log"),
-                os.path.join(test_outdir, "linearization_all.log"),
-            ]
-            for p in paths:
-                self.assertTrue(os.path.exists(p), "Output file not found.")
-
-            with open(
-                os.path.join(test_outdir, "linearization_all.log"), "r"
-            ) as f:
-                obs = f.read()
-                exp = "Dupliacted genome ID: G000000001 with input path ./tests/data/GCF_000981955.1_ASM98195v1_genomic\n"
-                self.assertAlmostEqual(
-                    obs, exp, "Log does not match expected log content."
+            with self.assertRaises(SystemExit) as context:
+                linearize_genomes(
+                    test_metadata, test_ext, test_outdir, test_gap, test_filt
                 )
+
+                paths = [
+                    os.path.join(test_outdir, "linearization_err.json.gz"),
+                ]
+                for p in paths:
+                    self.assertTrue(
+                        os.path.exists(p), f"Output file not found: {p}."
+                    )
+            self.assertEqual(context.exception.code, 1)
         finally:
             shutil.rmtree(test_outdir)
 
