@@ -1,1 +1,1 @@
-MSG_WELCOME = "placeholder"
+MSG_WELCOME = "package_welcome_placeholder"

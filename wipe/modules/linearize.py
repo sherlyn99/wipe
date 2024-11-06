@@ -58,7 +58,7 @@ def generate_inpath_outpath(inpath, ext, outdir, gid):
 def generate_log_entries(n_written, n_char, n_filtered, outpath):
     return {
         "contigs_written": n_written,
-        "char_written": n_char,
+        "chars_written": n_char,
         "contigs_filtered": n_filtered,
         "outpath": outpath,
     }
