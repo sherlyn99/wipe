@@ -1,6 +1,8 @@
 import click
+from os.path import join
 from wipe.modules.constants import MSG_WELCOME
 from wipe.modules.linearize import linearize_genomes
+from wipe.modules.metadata import generate_metadata
 
 # takes in a directory of genomes
 # linearize
@@ -34,6 +36,27 @@ def wipe():
 # fmt: on
 def linearize(metadata, ext, outdir, gap, filt):
     linearize_genomes(metadata, ext, outdir, gap, filt)
+
+
+# fmt: off
+@wipe.command()
+@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
+              help="Input directory containing all genome files.")
+@click.option("-e", "--ext", required=True,
+              help="Filename extension. e.g. 'fna' or '.fna'.")
+@click.option("-o", "--outdir", required=True,
+              help="Output directory for metadata.")
+@click.option("-s", "--start-gid", required=False,
+              help="Start genome gids, if they need to be specified.")
+# fmt: on
+def metadata(indir, ext, outdir, start_gid):
+    md_df = generate_metadata(indir, ext, start_gid)
+    md_df.to_csv(
+        join(outdir, "metadata.tsv"),
+        sep="\t",
+        index=False,
+        header=False,
+    )
 
 
 ## BASH

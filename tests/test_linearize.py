@@ -156,7 +156,7 @@ class LinearizeTests(unittest.TestCase):
         )
         exp = {
             "contigs_written": 100,
-            "char_written": 10000,
+            "chars_written": 10000,
             "contigs_filtered": 50,
             "outpath": "/path/to/outpath",
         }
