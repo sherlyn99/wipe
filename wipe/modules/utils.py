@@ -3,7 +3,7 @@ import bz2
 import json
 import gzip
 import lzma
-import time
+import shutil
 import logging
 import pandas as pd
 from os.path import splitext
@@ -71,6 +71,21 @@ def write_json_log(log_data, outdir, filename="log.json.gz", append=True):
 
     with gzip.open(filepath, "wt") as file:
         json.dump(existing_data, file, indent=4, ensure_ascii=False)
+
+
+def extract_gid_from_inpath(inpath):
+    inpath = inpath.replace(".gz", "")
+    inpath = inpath.replace(".xz", "")
+    gid = splitext(os.path.split(inpath)[-1])[0]
+    return gid
+
+
+def decompress(inpath, gid, tmpdir):
+    outpath = os.path.join(tmpdir, f"{gid}.fna")
+    with gzip.open(inpath, "rb") as fi:
+        with open(outpath, "wb") as fo:
+            shutil.copyfileobj(fi, fo)
+    return outpath
 
 
 # def setup_logger_with_stream(output_dir):
