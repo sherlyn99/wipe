@@ -1,3 +1,4 @@
+import os
 import gzip
 import json
 import shutil
@@ -9,6 +10,8 @@ from wipe.modules.utils import (
     load_md,
     check_duplicated_genome_ids,
     write_json_log,
+    extract_gid_from_inpath,
+    decompress,
 )
 
 
@@ -114,6 +117,30 @@ class LinearizeTests(unittest.TestCase):
             self.assertEqual(obs[0]["field2"], "value2\nmore stuff")
         finally:
             shutil.rmtree(test_outdir)
+
+    def test_extract_gid_from_inpath(self):
+        test_inpath = "/panfs/y1weng/41_marine_data/db/24195.GOMC_genomes_linearized/M/000/002/999/M000002999.fa.gz"
+        obs = extract_gid_from_inpath(test_inpath)
+        exp = "M000002999"
+        self.assertEqual(obs, exp)
+
+    def test_extract_gid_from_inpath_xz(self):
+        test_inpath = "M000002999.fa.xz"
+        obs = extract_gid_from_inpath(test_inpath)
+        exp = "M000002999"
+        self.assertEqual(obs, exp)
+
+    def test_decompress(self):
+        test_inpath = "./tests/data/GCF_000981955.1_ASM98195v1_genomic.fna.gz"
+        test_gid = "G000981955"
+        test_tmpdir = tempfile.mkdtemp()
+        try:
+            obs = decompress(test_inpath, test_gid, test_tmpdir)
+            exp = f"{test_tmpdir}/G000981955.fna"
+            self.assertEqual(obs, exp)
+            self.assertTrue(os.path.exists(exp))
+        finally:
+            shutil.rmtree(test_tmpdir)
 
 
 if __name__ == "__main__":

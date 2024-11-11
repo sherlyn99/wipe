@@ -166,3 +166,6 @@ def linearize_genomes(metadata, ext, outdir, gap, filt):
             write_json_log(
                 log_data, outdir, "linearization_err.json.gz", append=True
             )
+
+    log_data = {"status": "complete"}
+    write_json_log(log_data, outdir, "linearization_err.json.gz", append=True)
