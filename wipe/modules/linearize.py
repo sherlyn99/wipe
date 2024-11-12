@@ -125,7 +125,6 @@ def linearize_single_genome(
             full_seq = gap_string.join(seqs)
             n_char += (len(seqs) - 1) * len(gap_string)
             output_file.write(f"{full_seq}\n")
-
         else:
             for key, val in linearized.items():
                 if not should_filter_contig_name(filt, key):

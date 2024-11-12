@@ -3,6 +3,7 @@ from os.path import join
 from wipe.modules.constants import MSG_WELCOME
 from wipe.modules.linearize import linearize_genomes
 from wipe.modules.metadata import generate_metadata
+from wipe.modules.prodigal import run_prodigal_multiple_genomes
 
 # takes in a directory of genomes
 # linearize
@@ -59,5 +60,16 @@ def metadata(indir, ext, outdir, start_gid):
     )
 
 
-## BASH
-# wipe linearize -m <modified metadata>
+# fmt: off
+@wipe.command()
+@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
+              help="Input directory containing all genome files.")
+@click.option("-e", "--suffix", required=True,
+              help="Filename extension for searching. e.g. 'fa.gz'")
+@click.option("-tmp", "--tmpdir", required=True,
+              help="Tmp dir storing decompressed genome data.")
+@click.option("-log", "--log_dir", required=True,
+              help="E.g. ./tests/data/out.")
+# fmt: on
+def annotate(indir, suffix, tmpdir, log_dir):
+    run_prodigal_multiple_genomes(indir, suffix, tmpdir, log_dir)

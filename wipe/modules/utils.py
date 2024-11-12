@@ -4,8 +4,10 @@ import json
 import gzip
 import lzma
 import shutil
-import logging
+import subprocess
 import pandas as pd
+from glob import glob
+from pathlib import Path
 from os.path import splitext
 from datetime import datetime
 
@@ -86,6 +88,39 @@ def decompress(inpath, gid, tmpdir):
         with open(outpath, "wb") as fo:
             shutil.copyfileobj(fi, fo)
     return outpath
+
+
+def check_outputs(filelist):
+    return all(os.path.exists(file) for file in filelist)
+
+
+def xz_compress_files(filelist):
+    for file in filelist:
+        subprocess.run(["xz", "-z", file], check=True)
+
+
+def check_log_and_retrieve_gid(filepath):
+    if not os.path.isfile(filepath):
+        return False, None
+
+    with gzip.open(filepath, "rt") as file:
+        log_data = json.load(file)
+
+    gid = log_data.get("genome_id")
+
+    if log_data.get("status") == "success":
+        return True, gid
+    else:
+        return False, gid
+
+
+def get_files(indir, suffix):
+    suffix = "." + suffix.lstrip(".")
+    filepaths = Path(indir).rglob(f"*{suffix}")
+    abs_filepaths = [
+        os.path.abspath(f) for f in filepaths if "/.ipynb" not in str(f)
+    ]
+    return abs_filepaths
 
 
 # def setup_logger_with_stream(output_dir):
