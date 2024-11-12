@@ -12,10 +12,13 @@ from wipe.modules.utils import (
     write_json_log,
     extract_gid_from_inpath,
     decompress,
+    check_outputs,
+    check_log_and_retrieve_gid,
+    get_files
 )
 
 
-class LinearizeTests(unittest.TestCase):
+class UtilsTests(unittest.TestCase):
     def test_load_md_with_gid(self):
         test_md_path = "./tests/data/metadata.tsv"
         obs = load_md(test_md_path)
@@ -141,6 +144,37 @@ class LinearizeTests(unittest.TestCase):
             self.assertTrue(os.path.exists(exp))
         finally:
             shutil.rmtree(test_tmpdir)
+
+    def test_check_outputs(self):
+        test_filelist = [
+            "./tests/data/GCF_000981955.1_ASM98195v1_genomic.fna.gz",
+            "./tests/data/metadata.tsv",
+        ]
+        self.assertTrue(check_outputs(test_filelist))
+
+    def test_check_outputs(self):
+        test_filelist = [
+            "./tests/data/GCF_000981955.1_ASM98195v1_genomic.fna.gz",
+            "./tests/data/metadata2.tsv",
+        ]
+        self.assertFalse(check_outputs(test_filelist))
+
+    def test_check_log_and_retrieve_gid(self):
+        test_filepath = "./tests/data/prodigal_stats.json.gz"
+        obs_bool, obs_gid = check_log_and_retrieve_gid(test_filepath)
+        self.assertFalse(obs_bool)
+        self.assertEqual(obs_gid, "GCF_000981955.1_ASM98195v1_genomic")
+
+    def test_get_files(self):
+        test_indir = "./tests/data"
+        test_pattern = "fna"
+        obs = get_files(test_indir, test_pattern)
+        exp = [
+            "/home/y1weng/47_wipe/wipe/tests/data/GCF_000981955.1_ASM98195v1_genomic2.fna",
+            "/home/y1weng/47_wipe/wipe/tests/data/GCF_000981955.1_ASM98195v1_genomic.fna",
+            "/home/y1weng/47_wipe/wipe/tests/data/GCF_000981956.1_ASM98195v1_genomic_empty.fna",
+        ]
+        self.assertEqual(obs, exp)
 
 
 if __name__ == "__main__":

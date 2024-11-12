@@ -1,21 +1,10 @@
 import unittest
 import pandas as pd
 import pandas.testing as pdt
-from wipe.modules.metadata import get_files, generate_gids, generate_metadata
+from wipe.modules.metadata import generate_gids, generate_metadata
 
 
-class LinearizeTests(unittest.TestCase):
-    def test_get_files(self):
-        test_indir = "./tests/data"
-        test_pattern = "fna"
-        obs = get_files(test_indir, test_pattern)
-        exp = [
-            "/home/y1weng/47_wipe/wipe/tests/data/GCF_000981955.1_ASM98195v1_genomic2.fna",
-            "/home/y1weng/47_wipe/wipe/tests/data/GCF_000981955.1_ASM98195v1_genomic.fna",
-            "/home/y1weng/47_wipe/wipe/tests/data/GCF_000981956.1_ASM98195v1_genomic_empty.fna",
-        ]
-        self.assertEqual(obs, exp)
-
+class MetadataTests(unittest.TestCase):
     def test_generate_gids(self):
         test_start_gid = "M000001"
         test_n = 5
