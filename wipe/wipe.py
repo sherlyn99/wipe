@@ -4,6 +4,7 @@ from wipe.modules.constants import MSG_WELCOME
 from wipe.modules.linearize import linearize_genomes
 from wipe.modules.metadata import generate_metadata
 from wipe.modules.prodigal import run_prodigal_multiple_genomes
+from wipe.modules.checkm2 import run_checkm2_batch
 
 # takes in a directory of genomes
 # linearize
@@ -73,3 +74,17 @@ def metadata(indir, ext, outdir, start_gid):
 # fmt: on
 def annotate(indir, suffix, tmpdir, log_dir):
     run_prodigal_multiple_genomes(indir, suffix, tmpdir, log_dir)
+
+
+# fmt: off
+@wipe.command()
+@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
+              help="Input directory containing fa or fa.gz files.")
+@click.option("-l", "--logdir", required=True,
+              help="Directory storing ./checkm2_summary.json.gz")
+@click.option("-db", "--dbpath", default="/home/y1weng/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd",
+              help="Path to the checkm2 database.")
+@click.option("-t", "--threads", default=4)
+# fmt: on
+def qc(indir, logdir, dbpath, threads):
+    run_checkm2_batch(indir, logdir, dbpath, threads)
