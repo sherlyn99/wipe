@@ -100,27 +100,91 @@ def xz_compress_files(filelist):
 
 
 def check_log_and_retrieve_gid(filepath):
-    if not os.path.isfile(filepath):
-        return False, None
-
-    with gzip.open(filepath, "rt") as file:
-        log_data = json.load(file)
-
-    gid = log_data.get("genome_id")
-
-    if log_data.get("status") == "success":
-        return True, gid
+    if os.path.isfile(filepath):
+        with gzip.open(filepath, "rt") as file:
+            log_data = json.load(file)
+        return log_data.get("status") == "success", log_data.get("genome_id")
     else:
-        return False, gid
+        return False, None
 
 
 def get_files(indir, suffix):
-    suffix = "." + suffix.lstrip(".")
+    suffix = "." + suffix.lstrip(".")  # make sure suffix starts with '.'
     filepaths = Path(indir).rglob(f"*{suffix}")
     abs_filepaths = [
         os.path.abspath(f) for f in filepaths if "/.ipynb" not in str(f)
     ]
     return abs_filepaths
+
+
+def get_files_all_fa(indir):
+    filelist_fa_gz = get_files(indir, "fa.gz")
+    filelist_fna_gz = get_files(indir, "fna.gz")
+    filelist_fasta_gz = get_files(indir, "fasta.gz")
+    filelist_fa = get_files(indir, ".fa")
+    filelist_fna = get_files(indir, ".fna")
+    filelist_fasta = get_files(indir, ".fasta")
+    filelist = (
+        filelist_fa_gz
+        + filelist_fna_gz
+        + filelist_fasta_gz
+        + filelist_fa
+        + filelist_fna
+        + filelist_fasta
+    )
+    return filelist
+
+
+def search_dirs(start_dir, basename_pattern):
+    """Does recursive search for directory/file.
+    Example
+    -------
+    search_dirs("./tests/data/, "checkm2_out*)
+    """
+    dir_pattern = os.path.join(start_dir, "**", basename_pattern)
+    dirs = glob(dir_pattern, recursive=True)
+    return dirs
+
+
+def gen_output_paths(process, inpath, outdir):
+    gid = os.path.basename(inpath).split(".")[0]
+
+    outdir_path = os.path.join(outdir, f"{process}_out_{gid}")
+    stats_path = os.path.join(outdir, f"{process}_stats_{gid}.json.gz")
+    return outdir_path, stats_path, gid
+
+
+def gen_path(pdir, filename):
+    return os.path.join(pdir, filename)
+
+
+def gen_stats_data(process, inpath):
+    gid = os.path.basename(inpath).split(".")[0]
+
+    stats_data = {
+        "genome_id": gid,
+        "process": process,
+        "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "end_time": None,
+        "status": "in_progress",
+        "details": {
+            "input_file": inpath,
+            "output_files": {},
+        },
+        "error": "no error",
+    }
+    return stats_data
+
+
+def gen_summary_data(process):
+    log_data = {
+        "process": process,
+        "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "end_time": None,
+        "status": "in_progress",
+        "error": "no error",
+    }
+    return log_data
 
 
 # def setup_logger_with_stream(output_dir):

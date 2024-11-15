@@ -1,16 +1,7 @@
 import os
 import pandas as pd
 from pathlib import Path
-from glob import glob
-
-
-def get_files(indir, suffix):
-    suffix = "." + suffix.lstrip(".")
-    filepaths = Path(indir).rglob(f"*{suffix}")
-    abs_filepaths = [
-        os.path.abspath(f) for f in filepaths if "/.ipynb" not in str(f)
-    ]
-    return abs_filepaths
+from wipe.modules.utils import get_files
 
 
 def generate_gids(start_genome_id, num_ids):
