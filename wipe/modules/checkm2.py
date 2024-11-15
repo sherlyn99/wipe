@@ -5,13 +5,13 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 from wipe.modules.utils import (
-    get_files,
     gen_output_paths,
     gen_path,
     gen_stats_data,
     gen_summary_data,
     check_outputs,
     check_log_and_retrieve_gid,
+    get_files_all_fa,
 )
 
 
@@ -45,29 +45,11 @@ def gen_command_checkm2(
     return commands
 
 
-def get_files_checkm2(indir):
-    filelist_fa_gz = get_files(indir, "fa.gz")
-    filelist_fna_gz = get_files(indir, "fna.gz")
-    filelist_fasta_gz = get_files(indir, "fasta.gz")
-    filelist_fa = get_files(indir, ".fa")
-    filelist_fna = get_files(indir, ".fna")
-    filelist_fasta = get_files(indir, ".fasta")
-    filelist = (
-        filelist_fa_gz
-        + filelist_fna_gz
-        + filelist_fasta_gz
-        + filelist_fa
-        + filelist_fna
-        + filelist_fasta
-    )
-    return filelist
-
-
-def gen_stats_data_checkm2(inpath, outdir):
+def gen_stats_data_checkm2(inpath, outdir_path):
     log_data = gen_stats_data("checkm2_run", inpath)
     log_data["details"]["output_files"][
         "checkm2_report"
-    ] = f"{outdir}/quality_report.tsv"
+    ] = f"{outdir_path}/quality_report.tsv"
     return log_data
 
 
@@ -97,12 +79,12 @@ def gen_summary_checkm2(logdir):
 
 def check_outputs_checkm2(outdir_path, stats_path):
     """Check existence for key output files and log status"""
-    output_files = [
+    output_fps = [
         outdir_path,
         os.path.join(outdir_path, "quality_report.tsv"),
         stats_path,
     ]
-    file_existence = check_outputs(output_files)
+    file_existence = check_outputs(output_fps)
     status, gid = check_log_and_retrieve_gid(stats_path)
     return file_existence and status
 
@@ -122,7 +104,7 @@ def run_checkm2_single(inpath, outdir, dbpath, threads, genes=None):
     "/data/001/002/003/checkm2_out_G001002003"
     "/data/001/002/003/checkm2_stats_G001002003.json.gz"
     """
-    outdir_path, stats_path = gen_output_paths("checkm2", inpath, outdir)
+    outdir_path, stats_path, _ = gen_output_paths("checkm2", inpath, outdir)
 
     # skip if already completed
     if check_outputs_checkm2(outdir_path, stats_path):
@@ -162,7 +144,7 @@ def run_checkm2_batch(indir, logdir, dbpath, threads):
                       "/home/y1weng/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd",
                       4)
     """
-    filelist = get_files_checkm2(indir)
+    filelist = get_files_all_fa(indir)
     summary_path, summary_data = gen_summary_checkm2(logdir)
 
     with gzip.open(summary_path, "wt") as file:

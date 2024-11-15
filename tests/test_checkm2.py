@@ -5,7 +5,7 @@ from wipe.modules.checkm2 import (
     gen_command_checkm2,
     gen_stats_data_checkm2,
     run_checkm2_single,
-    run_checkm2_batch
+    run_checkm2_batch,
 )
 
 
@@ -122,15 +122,15 @@ class LinearizeTests(unittest.TestCase):
     #     test_threads = 4
     #     run_checkm2_single(test_infile, test_outdir, test_dbpath, test_threads)
 
-    # comment out because of thread-creating issue on barnacle2 and abs dbpath
-    def test_run_checkm2_batch(self):
-        test_indir = "./tests/data/999/"
-        test_logdir = "./tests/out/"
-        test_dbpath = (
-            "/home/y1weng/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd"
-        )
-        test_threads = 4
-        run_checkm2_batch(test_indir, test_logdir, test_dbpath, test_threads)
+    # # comment out because of thread-creating issue on barnacle2 and abs dbpath
+    # def test_run_checkm2_batch(self):
+    #     test_indir = "./tests/data/999/"
+    #     test_logdir = "./tests/out/"
+    #     test_dbpath = (
+    #         "/home/y1weng/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd"
+    #     )
+    #     test_threads = 4
+    #     run_checkm2_batch(test_indir, test_logdir, test_dbpath, test_threads)
 
 
 if __name__ == "__main__":
