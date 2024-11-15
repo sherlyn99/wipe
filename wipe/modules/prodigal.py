@@ -1,19 +1,64 @@
 import os
 import gzip
+import lzma
 import json
+import skbio
+import shutil
 import subprocess
+from pathlib import Path
 from datetime import datetime
 from wipe.modules.utils import (
-    extract_gid_from_inpath,
-    decompress,
-    xz_compress_files,
+    gen_output_paths,
+    check_outputs,
     check_log_and_retrieve_gid,
-    get_files,
+    gen_stats_data,
+    xz_compress_files,
+    get_files_all_fa,
+    gen_path,
+    gen_summary_data,
 )
 
 
+def check_outputs_prodigal(outdir_path, stats_path, gid):
+    output_fps = [
+        outdir_path,
+        stats_path,
+        os.path.join(outdir_path, f"{gid}.faa.xz"),
+        os.path.join(outdir_path, f"{gid}.ffn.xz"),
+        os.path.join(outdir_path, f"{gid}.gff.xz"),
+        os.path.join(outdir_path, f"coords_{gid}.txt.xz"),
+        os.path.join(outdir_path, f"proteins_{gid}.tsv.xz"),
+    ]
+    file_existence = check_outputs(output_fps)
+    status, gid = check_log_and_retrieve_gid(stats_path)
+    return file_existence and status
+
+
+def decompress(inpath, tmpdir):
+    """Decompress the genome file into tmpdir/{gid}.fna if it
+    is gz compressed. If not, return inpath.
+
+    Example
+    -------
+    decompress("/G/999/G999.fna.gz", "/tmp")
+    >> "/tmp/G999.fna", TRUE
+
+    decompress("/G/999/G999.fna", "/tmp")
+    >> "/G/999/G999.fna", FALSE
+    """
+    gid = os.path.basename(inpath).split(".")[0]
+    if inpath.endswith(".gz"):
+        outpath = os.path.join(tmpdir, f"{gid}.fna")
+        with gzip.open(inpath, "rb") as fi:
+            with open(outpath, "wb") as fo:
+                shutil.copyfileobj(fi, fo)
+        return outpath, True
+    else:
+        return inpath, False
+
+
 def gen_commands_prodigal(infna, gid, outdir):
-    # Note: Prodiigal does not take .fna.gz as of 2024-11-11
+    # NB: Prodiigal does not take .fna.gz and one thread only as of 2024-11-11
     commands = [
         "prodigal",
         "-p",
@@ -35,58 +80,27 @@ def gen_commands_prodigal(infna, gid, outdir):
     return commands
 
 
-def gen_log_data_prodigal_all():
-    log_data = {
-        "process": "prodigal_run",
-        "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "end_time": None,
-        "status": "in_progress",
-        "error": [],
-    }
-    return log_data
+def gen_stats_data_prodigal(inpath, outdir_path):
+    stats_data = gen_stats_data("prodigal_run", inpath)
 
+    gid = os.path.basename(inpath).split(".")[0]
+    stats_data["details"]["output_files"]["faa"] = os.path.join(
+        outdir_path, f"{gid}.faa.xz"
+    )
+    stats_data["details"]["output_files"]["ffn"] = os.path.join(
+        outdir_path, f"{gid}.ffn.xz"
+    )
+    stats_data["details"]["output_files"]["gff"] = os.path.join(
+        outdir_path, f"{gid}.gff.xz"
+    )
+    stats_data["details"]["output_files"]["coords"] = os.path.join(
+        outdir_path, f"coords_{gid}.txt.xz"
+    )
+    stats_data["details"]["output_files"]["proteins"] = os.path.join(
+        outdir_path, f"proteins_{gid}.tsv.xz"
+    )
 
-def gen_log_data_prodigal(inpath, infna, gid, outdir):
-    log_data = {
-        "genome_id": gid,
-        "process": "prodigal_run",
-        "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "end_time": None,
-        "status": "in_progress",
-        "details": {
-            "input_file_compressed": inpath,
-            "input_file": infna,
-            "output_files": {
-                "gff": f"{outdir}/{gid}.gff.xz",
-                "faa": f"{outdir}/{gid}.faa.xz",
-                "ffn": f"{outdir}/{gid}.ffn.xz",
-            },
-        },
-        "error": None,
-    }
-    return log_data
-
-
-def gen_log_filepath_prodigal(outdir, gid=None):
-    if gid:
-        return os.path.join(outdir, f"prodigal_stats_{gid}.json.gz")
-    else:
-        return os.path.join(outdir, "prodigal_stats.json.gz")
-
-
-def gen_log_prodigal(inpath, infna, gid, outdir):
-    log_filepath = gen_log_filepath_prodigal(outdir, gid)
-    log_data = gen_log_data_prodigal(inpath, infna, gid, outdir)
-    return log_filepath, log_data
-
-
-def check_stats_prodigal(outdir, id=None):
-    if id:
-        logpath = os.path.join(outdir, f"prodigal_stats_{id}.json.gz")
-    else:
-        logpath = os.path.join(outdir, "prodigal_stats.json.gz")
-    status, gid = check_log_and_retrieve_gid(logpath)
-    return status, gid
+    return stats_data
 
 
 def compress_outputs_prodigal(outdir_prodigal, gid):
@@ -98,94 +112,136 @@ def compress_outputs_prodigal(outdir_prodigal, gid):
     xz_compress_files(filelist)
 
 
-def run_prodigal_single_genome(inpath, outdir, tmpdir, gid=None):
+def get_coords_and_proteins(faa_fp, out_coords_fp, out_proteins_fp):
+    proteins_ct = 0
+    with lzma.open(out_coords_fp, "wt") as coords_fo:
+        current_nucl = None
+        for seq in skbio.read(faa_fp, format="fasta"):
+            header = seq.metadata["id"] + " " + seq.metadata["description"]
+            name, pos5, pos3, strand, _ = header.split(" # ", 4)
+            nucl, idx = name.rsplit("_", 1)
+            beg, end = (pos5, pos3) if strand == "1" else (pos3, pos5)
+            if nucl != current_nucl:
+                current_nucl = nucl
+                coords_fo.write(f">{nucl}\n")
+
+            coords_fo.write(f"{idx}\t{beg}\t{end}\n")
+            proteins_ct += 1
+
+    with lzma.open(out_proteins_fp, "wt") as proteins_fo:
+        proteins_fo.write("genome_id\tproteins_ct\n")
+        proteins_fo.write(f"{current_nucl}\t{str(proteins_ct)}\n")
+
+
+def gen_summary_path_prodigal(logdir):
+    return gen_path(logdir, "prodigal_summary.json.gz")
+
+
+def gen_summary_data_prodigal():
+    return gen_summary_data("prodigal_run")
+
+
+def gen_summary_prodigal(logdir):
+    summary_path = gen_summary_path_prodigal(logdir)
+    summary_data = gen_summary_data_prodigal()
+    return summary_path, summary_data
+
+
+def run_prodigal_single(inpath, outdir, tmpdir):
     """
     NB: tmpdir has to be an existing directory
 
     Example:
-    run_prodigal_single_genome(
-        "./linearized_genomes/M/001/002/003/M001002003.fna.gz",
-        "./linearized_genomes/M/001/002/003/",
-        "/tmp/run1"
-    )
+    run_prodigal_single_genome("./linearized_genomes/M/001/002/003/M001002003.fna.gz",
+                               "./linearized_genomes/M/001/002/003/",
+                               "/tmp/run1")
 
     Example Outputs:
-        "./linearized_genomes/M/001/002/003/prodigal_stats.json.gz"
+        "./linearized_genomes/M/001/002/003/prodigal_stats_M001002003.json.gz"
         "./linearized_genomes/M/001/002/003/prodigal_out/M001002003.gff.xz"
         "./linearized_genomes/M/001/002/003/prodigal_out/M001002003.faa.xz"
         "./linearized_genomes/M/001/002/003/prodigal_out/M001002003.ffn.xz"
+        "./linearized_genomes/M/001/002/003/prodigal_out/coords_M001002003.txt.xz"
+        "./linearized_genomes/M/001/002/003/prodigal_out/proteins_{gid}.tsv.xz"
     """
-    if not gid:
-        gid = extract_gid_from_inpath(inpath)
+    # outdir_path = "./linearized_genomes/M/001/002/003/prodigal_out/"
+    # stats_path = "./linearized_genomes/M/001/002/003/prodigal_stats_M001002003.json.gz"
+    # gid = "M001002003"
+    outdir_path, stats_path, gid = gen_output_paths("prodigal", inpath, outdir)
 
-    # Skip if the stats.json.gz says status == success
-    status, retrieved_gid = check_stats_prodigal(outdir, gid)
-    if status:
+    # skip if already completed
+    if check_outputs_prodigal(outdir_path, stats_path, gid):
         return
 
-    # Decompress input fna.gz
-    infna = decompress(inpath, gid, tmpdir)
+    # decompress if the inpath is gz compressed
+    infna, to_delete = decompress(inpath, tmpdir)
 
-    # Create outdir/prodigal_out
-    outdir_prodigal = os.path.join(outdir, "prodigal_out")
-    os.makedirs(outdir_prodigal, exist_ok=True)
+    Path(outdir_path).mkdir(parents=True, exist_ok=True)
+    commands = gen_commands_prodigal(infna, gid, outdir_path)
+    stats_data = gen_stats_data_prodigal(infna, outdir_path)
 
-    # Generate prodigal commands and logs
-    commands_prodigal = gen_commands_prodigal(infna, gid, outdir_prodigal)
-    log_filepath, log_data = gen_log_prodigal(inpath, infna, gid, outdir)
-
-    with gzip.open(log_filepath, "wt") as file:
-        json.dump(log_data, file, indent=4, ensure_ascii=False)
+    with gzip.open(stats_path, "wt") as file:
+        json.dump(stats_data, file, indent=4)
 
     try:
         p = subprocess.run(
-            commands_prodigal, capture_output=True, text=True, check=True
+            commands, capture_output=True, text=True, check=True
         )
 
-        log_data["status"] = "success"
+        stats_data["status"] = "success"
+
+        # Get coords and proteins
+        faa_fp = os.path.join(outdir_path, f"{gid}.faa")
+        out_coords_fp = stats_data["details"]["output_files"]["coords"]
+        out_proteins_fp = stats_data["details"]["output_files"]["proteins"]
+        get_coords_and_proteins(faa_fp, out_coords_fp, out_proteins_fp)
 
         # Compress the Prodigal output files using `xz`
-        compress_outputs_prodigal(outdir_prodigal, gid)
+        compress_outputs_prodigal(outdir_path, gid)
 
     except subprocess.CalledProcessError as e:
         # Capture any errors encountered
-        log_data["status"] = "failure"
-        log_data["error"] = e.stderr  # Error message from Prodigal
+        stats_data["status"] = "failure"
+        stats_data["error"] = e.stderr  # Error message from Prodigal
     except FileNotFoundError as e:
         # Handle cases where Prodigal or the input file doesn't exist
-        log_data["status"] = "failure"
-        log_data["error"] = str(e)
+        stats_data["status"] = "failure"
+        stats_data["error"] = str(e)
+    except Exception as e:
+        stats_data["status"] = "failure"
+        stats_data["error"] = str(e)
     finally:
         # Update end time and write final log
-        log_data["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with gzip.open(log_filepath, "wt") as file:
-            json.dump(log_data, file, indent=4, ensure_ascii=False)
+        stats_data["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with gzip.open(stats_path, "wt") as file:
+            json.dump(stats_data, file, indent=4, ensure_ascii=False)
 
-        os.remove(infna)
+        if to_delete:
+            os.remove(infna)
 
 
-def run_prodigal_multiple_genomes(indir, suffix, tmpdir, logdir):
-    filelist = get_files(indir, suffix)
-    log_data = gen_log_data_prodigal_all()
-    log_filepath = os.path.join(logdir, "prodigal_summary.json.gz")
+def run_prodigal_batch(indir, logdir, tmpdir):
+    """
+    Example
+    -------
+    """
+    filelist = get_files_all_fa(indir)
+    summary_path, summary_data = gen_summary_prodigal(logdir)
 
-    with gzip.open(log_filepath, "wt") as file:
-        json.dump(log_data, file, indent=4, ensure_ascii=False)
+    with gzip.open(summary_path, "wt") as file:
+        json.dump(summary_data, file, indent=4)
 
     for file in filelist:
-        outdir_file = os.path.dirname(file)
-        gid = extract_gid_from_inpath(file)
-        run_prodigal_single_genome(file, outdir_file, tmpdir, gid)
+        outdir_path = os.path.dirname(file)
+        try:
+            run_prodigal_single(file, outdir_path, tmpdir)
+        except Exception as e:
+            if isinstance(summary_data["error"], list):
+                summary_data["error"].append(f"{file}: {e}")
+            else:
+                summary_data["error"] = [f"{file}: {e}"]
 
-        logpath = os.path.join(outdir_file, f"prodigal_stats_{gid}.json.gz")
-        status, gid = check_log_and_retrieve_gid(logpath)
-        if status == False:
-            log_data["error"].append(gid)
-
-        with gzip.open(log_filepath, "wt") as file:
-            json.dump(log_data, file, indent=4, ensure_ascii=False)
-
-    log_data["status"] = "completed"
-    log_data["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with gzip.open(log_filepath, "wt") as file:
-        json.dump(log_data, file, indent=4, ensure_ascii=False)
+    summary_data["status"] = "completed"
+    summary_data["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with gzip.open(summary_path, "wt") as file:
+        json.dump(summary_data, file, indent=4, ensure_ascii=False)
