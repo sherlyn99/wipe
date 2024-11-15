@@ -2,22 +2,32 @@ import os
 import gzip
 import json
 import subprocess
+from pathlib import Path
 from datetime import datetime
-from wipe.modules.utils import get_files
+from wipe.modules.utils import (
+    gen_output_paths,
+    gen_path,
+    gen_stats_data,
+    gen_summary_data,
+    check_outputs,
+    check_log_and_retrieve_gid,
+    get_files_all_fa,
+)
 
 
 def gen_command_checkm2(
-    infile,
+    inpath,
     threads,
     outdir,
     dbpath,
     genes=None,
 ):
+    """NB: --genes parameter not used currently"""
     commands = [
         "checkm2",
         "predict",
         "-i",
-        infile,
+        inpath,
         "-o",
         outdir,
         "-t",
@@ -27,7 +37,7 @@ def gen_command_checkm2(
         dbpath,
         "--remove_intermediates",
     ]
-    if infile.endswith(".gz"):
+    if inpath.endswith(".gz"):
         commands += ["-x", "gz"]
     if genes:
         commands += ["--genes", genes]
@@ -35,36 +45,29 @@ def gen_command_checkm2(
     return commands
 
 
-def get_files_checkm2(indir):
-    filelist_fa_gz = get_files(indir, "fa.gz")
-    filelist_fna_gz = get_files(indir, "fna.gz")
-    filelist_fasta_gz = get_files(indir, "fasta.gz")
-    filelist_fa = get_files(indir, ".fa")
-    filelist_fna = get_files(indir, ".fna")
-    filelist_fasta = get_files(indir, ".fasta")
-    filelist = (
-        filelist_fa_gz
-        + filelist_fna_gz
-        + filelist_fasta_gz
-        + filelist_fa
-        + filelist_fna
-        + filelist_fasta
-    )
-    return filelist
+def gen_stats_data_checkm2(inpath, outdir_path):
+    log_data = gen_stats_data("checkm2_run", inpath)
+    log_data["details"]["output_files"][
+        "checkm2_report"
+    ] = f"{outdir_path}/quality_report.tsv"
+    return log_data
 
 
 def gen_summary_path_checkm2(logdir):
-    return os.path.join(logdir, "checkm2_summary.json.gz")
+    """
+    Example
+    -------
+    gen_stats_path_checkm2("/data/G/")
+
+    Outputs:
+    -------
+    "/data/G/checkm2_summary.json.gz"
+    """
+    return gen_path(logdir, "checkm2_summary.json.gz")
 
 
 def gen_summary_data_checkm2():
-    summary_data = {
-        "process": "checkm2_run",
-        "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "end_time": None,
-        "status": "in_progress",
-        "error": "no error",
-    }
+    summary_data = gen_summary_data("checkm2_run")
     return summary_data
 
 
@@ -74,32 +77,83 @@ def gen_summary_checkm2(logdir):
     return summary_path, summary_data
 
 
-def run_checkm2_single(infile, outdir, dbpath, threads, genes=None):
+def check_outputs_checkm2(outdir_path, stats_path):
+    """Check existence for key output files and log status"""
+    output_fps = [
+        outdir_path,
+        os.path.join(outdir_path, "quality_report.tsv"),
+        stats_path,
+    ]
+    file_existence = check_outputs(output_fps)
+    status, gid = check_log_and_retrieve_gid(stats_path)
+    return file_existence and status
+
+
+def run_checkm2_single(inpath, outdir, dbpath, threads, genes=None):
     """
+    NB: Filenames should be in the format of info1_info2.fna(.gz)
+
     Example
     -------
     run_checkm2_single("/data/001/002/003/G001002003.fa.gz",
-                       "/data/001/002/003/checkm2_out",
+                       "/data/001/002/003/",
                        4)
+
+    Example Outputs
+    ----------------
+    "/data/001/002/003/checkm2_out_G001002003"
+    "/data/001/002/003/checkm2_stats_G001002003.json.gz"
     """
-    commands = gen_command_checkm2(infile, threads, outdir, dbpath, genes)
-    if not os.path.exists(outdir):
+    outdir_path, stats_path, _ = gen_output_paths("checkm2", inpath, outdir)
+
+    # skip if already completed
+    if check_outputs_checkm2(outdir_path, stats_path):
+        return
+
+    Path(outdir_path).mkdir(parents=True, exist_ok=True)
+    commands = gen_command_checkm2(inpath, threads, outdir_path, dbpath, genes)
+    stats_data = gen_stats_data_checkm2(inpath, outdir_path)
+
+    with gzip.open(stats_path, "wt") as file:
+        json.dump(stats_data, file, indent=4)
+
+    try:
         p = subprocess.run(
             commands, capture_output=True, text=True, check=True
         )
+        stats_data["status"] = "success"
+
+    except subprocess.CalledProcessError as e:
+        stats_data["status"] = "failure"
+        stats_data["error"] = e.stderr  # Error message from Prodigal
+    except FileNotFoundError as e:
+        stats_data["status"] = "failure"
+        stats_data["error"] = str(e)
+    finally:
+        stats_data["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with gzip.open(stats_path, "wt") as file:
+            json.dump(stats_data, file, indent=4)
 
 
 def run_checkm2_batch(indir, logdir, dbpath, threads):
-    filelist = get_files_checkm2(indir)
+    """
+    Example
+    -------
+    run_checkm2_batch("./tests/data/999/",
+                      "./tests/data/",
+                      "/home/y1weng/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd",
+                      4)
+    """
+    filelist = get_files_all_fa(indir)
     summary_path, summary_data = gen_summary_checkm2(logdir)
 
     with gzip.open(summary_path, "wt") as file:
-        json.dump(summary_data, file, indent=4, ensure_ascii=False)
+        json.dump(summary_data, file, indent=4)
 
     for file in filelist:
-        outdir_single = os.path.join(os.path.dirname(file), "checkm2_out")
+        outdir = os.path.dirname(file)
         try:
-            run_checkm2_single(file, outdir_single, dbpath, threads)
+            run_checkm2_single(file, outdir, dbpath, threads)
         except Exception as e:
             if isinstance(summary_data["error"], list):
                 summary_data["error"].append(f"{file}: {e}")

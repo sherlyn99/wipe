@@ -6,6 +6,9 @@ import tempfile
 import unittest
 import pandas as pd
 import pandas.testing as pdt
+from pathlib import Path
+from datetime import datetime
+from unittest.mock import patch
 from wipe.modules.utils import (
     load_md,
     check_duplicated_genome_ids,
@@ -14,7 +17,11 @@ from wipe.modules.utils import (
     decompress,
     check_outputs,
     check_log_and_retrieve_gid,
-    get_files
+    get_files,
+    gen_path,
+    gen_stats_data,
+    gen_summary_data,
+    gen_output_paths,
 )
 
 
@@ -160,21 +167,112 @@ class UtilsTests(unittest.TestCase):
         self.assertFalse(check_outputs(test_filelist))
 
     def test_check_log_and_retrieve_gid(self):
-        test_filepath = "./tests/data/prodigal_stats.json.gz"
+        test_filepath = "./tests/data/checkm2_stats_M000000999.json.gz"
+        obs_bool, obs_gid = check_log_and_retrieve_gid(test_filepath)
+        self.assertTrue(obs_bool)
+        self.assertEqual(obs_gid, "M000000999")
+
+    def test_check_log_and_retrieve_gid_failed(self):
+        test_filepath = "./tests/data/prodigal_stats_fail.json.gz"
         obs_bool, obs_gid = check_log_and_retrieve_gid(test_filepath)
         self.assertFalse(obs_bool)
         self.assertEqual(obs_gid, "GCF_000981955.1_ASM98195v1_genomic")
 
     def test_get_files(self):
-        test_indir = "./tests/data"
-        test_pattern = "fna"
-        obs = get_files(test_indir, test_pattern)
-        exp = [
-            "/home/y1weng/47_wipe/wipe/tests/data/GCF_000981955.1_ASM98195v1_genomic2.fna",
-            "/home/y1weng/47_wipe/wipe/tests/data/GCF_000981955.1_ASM98195v1_genomic.fna",
-            "/home/y1weng/47_wipe/wipe/tests/data/GCF_000981956.1_ASM98195v1_genomic_empty.fna",
-        ]
+        suffix = ".fa"
+        indir = tempfile.mkdtemp()
+
+        try:
+            files = [
+                Path(indir) / "file1.fa",
+                Path(indir) / "subdir" / "file2.fa",
+                Path(indir) / "file3.md",
+                Path(indir) / "subdir" / ".ipynb_checkpoints" / "file4.fa",
+            ]
+            for file in files:
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.touch()
+
+            obs = get_files(indir, suffix)
+
+            exp = [
+                f"{indir}/file1.fa",
+                f"{indir}/subdir/file2.fa",
+            ]
+            self.assertEqual(obs, exp)
+        finally:
+            shutil.rmtree(indir)
+
+    def test_gen_path(self):
+        logdir = "/path/to/log"
+        filename = "stats_G001.json.gz"
+        obs = gen_path(logdir, filename)
+        exp = "/path/to/log/stats_G001.json.gz"
         self.assertEqual(obs, exp)
+
+    @patch("wipe.modules.utils.datetime")
+    def test_gen_stats_data(self, mock_datetime):
+        mock_datetime.now.return_value = datetime(2024, 11, 13, 15, 30, 0)
+        process = "prodigal_run"
+        inpath = "/path/to/input/file.fna"
+
+        obs = gen_stats_data(process, inpath)
+        exp = {
+            "genome_id": "file",
+            "process": process,
+            "start_time": "2024-11-13 15:30:00",
+            "end_time": None,
+            "status": "in_progress",
+            "details": {
+                "input_file": inpath,
+                "output_files": {},
+            },
+            "error": "no error",
+        }
+        self.assertTrue(obs, exp)
+
+    @patch("wipe.modules.utils.datetime")
+    def test_gen_summary_data(self, mock_datetime):
+        mock_datetime.now.return_value = datetime(2024, 11, 13, 15, 30, 0)
+        process = "prodigal_run"
+
+        obs = gen_summary_data(process)
+        exp = {
+            "process": process,
+            "start_time": "2024-11-13 15:30:00",
+            "end_time": None,
+            "status": "in_progress",
+            "error": "no error",
+        }
+        self.assertEqual(obs, exp)
+
+    def test_gen_output_paths(self):
+        process = "checkm2"
+        inpath = "/G/001/002/003/G001002003.fna.gz"
+        outdir = "/G/001/002/003/"
+        obs_outdir_path, obs_stats_path, obs_gid = gen_output_paths(
+            process, inpath, outdir
+        )
+        self.assertEqual(
+            obs_outdir_path, "/G/001/002/003/checkm2_out_G001002003"
+        )
+        self.assertEqual(
+            obs_stats_path, "/G/001/002/003/checkm2_stats_G001002003.json.gz"
+        )
+        self.assertEqual(obs_gid, "G001002003")
+
+    def test_gen_output_paths_nonncbi(self):
+        process = "checkm2"
+        inpath = "/data/my_genome.fna.gz"
+        outdir = "/out/"
+        obs_outdir_path, obs_stats_path, obs_gid = gen_output_paths(
+            process, inpath, outdir
+        )
+        self.assertEqual(obs_outdir_path, "/out/checkm2_out_my_genome")
+        self.assertEqual(
+            obs_stats_path, "/out/checkm2_stats_my_genome.json.gz"
+        )
+        self.assertEqual(obs_gid, "my_genome")
 
 
 if __name__ == "__main__":

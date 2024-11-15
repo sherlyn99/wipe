@@ -65,6 +65,7 @@ def generate_log_entries(n_written, n_char, n_filtered, outpath):
 
 
 def read_fasta(inpath):
+    """This works for .fna as well .fna.gz but not .fna.xz"""
     records = {}
     for seq in skbio.read(inpath, format="fasta"):
         header = (
@@ -151,7 +152,9 @@ def linearize_genomes(metadata, ext, outdir, gap, filt):
         check_duplicated_genome_ids(md_df)
     except Exception as e:
         log_data = {"input_path": "NA", "error": f"{e}"}
-        write_json_log(log_data, outdir, "linearization.err.gz", append=True)
+        write_json_log(
+            log_data, outdir, "linearization_summary.gz", append=True
+        )
         sys.exit(1)
 
     for row in md_df.itertuples(index=False):
@@ -163,8 +166,10 @@ def linearize_genomes(metadata, ext, outdir, gap, filt):
         except Exception as e:
             log_data = {"input_path": inpath, "error": f"{e}"}
             write_json_log(
-                log_data, outdir, "linearization_err.json.gz", append=True
+                log_data, outdir, "linearization_summary.json.gz", append=True
             )
 
     log_data = {"status": "complete"}
-    write_json_log(log_data, outdir, "linearization_err.json.gz", append=True)
+    write_json_log(
+        log_data, outdir, "linearization_summary.json.gz", append=True
+    )
