@@ -1,3 +1,4 @@
+import re
 import os
 import bz2
 import json
@@ -185,6 +186,36 @@ def gen_summary_data(process):
         "error": "no error",
     }
     return log_data
+
+
+def infer_gid_ncbi(inpath):
+    """Infer genome id (GXXXXX) from ncbi-stype genome file name (GCF_XXXXXX_XX_genomic.fna)"""
+    fname = inpath.split("/")[-1]
+    ptn = re.compile(r"GC[FA]_([0-9]{9})(?:\.[0-9]+_.*)?")
+    m = ptn.match(fname)
+    if m:
+        gid = "G" + m.group(1)
+        return gid
+    else:
+        raise ValueError(f"No valid genome ID provided or extracted: {inpath}")
+
+
+def load_assembly(inpath):
+    df_assembly = pd.read_csv(
+        inpath,
+        sep="\t",
+        low_memory=False,
+        header=1,
+    )
+    df_assembly = df_assembly.rename(
+        columns={"#assembly_accession": "assembly_accession"}
+    )
+    df_assembly.insert(
+        0,
+        "genome_id",
+        df_assembly["assembly_accession"].apply(infer_gid_ncbi),
+    )
+    return df_assembly
 
 
 # def setup_logger_with_stream(output_dir):
