@@ -3,8 +3,9 @@ from os.path import join
 from wipe.modules.constants import MSG_WELCOME
 from wipe.modules.linearize import linearize_genomes
 from wipe.modules.metadata import generate_metadata
-from wipe.modules.prodigal import run_prodigal_multiple_genomes
+from wipe.modules.prodigal import run_prodigal_batch
 from wipe.modules.checkm2 import run_checkm2_batch
+from wipe.modules.collection import collect_results
 
 # takes in a directory of genomes
 # linearize
@@ -65,15 +66,13 @@ def metadata(indir, ext, outdir, start_gid):
 @wipe.command()
 @click.option("-i", "--indir", required=True, type=click.Path(exists=True),
               help="Input directory containing all genome files.")
-@click.option("-e", "--suffix", required=True,
-              help="Filename extension for searching. e.g. 'fa.gz'")
-@click.option("-tmp", "--tmpdir", required=True,
-              help="Tmp dir storing decompressed genome data.")
 @click.option("-log", "--log_dir", required=True,
               help="E.g. ./tests/data/out.")
+@click.option("-tmp", "--tmp_dir", required=True,
+              help="Tmp dir storing decompressed genome data.")
 # fmt: on
-def annotate(indir, suffix, tmpdir, log_dir):
-    run_prodigal_multiple_genomes(indir, suffix, tmpdir, log_dir)
+def annotate(indir, log_dir, tmp_dir):
+    run_prodigal_batch(indir, log_dir, tmp_dir)
 
 
 # fmt: off
@@ -88,3 +87,20 @@ def annotate(indir, suffix, tmpdir, log_dir):
 # fmt: on
 def qc(indir, logdir, dbpath, threads):
     run_checkm2_batch(indir, logdir, dbpath, threads)
+
+
+# fmt: off
+@wipe.command()
+@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
+              help="Input directory containing stats files.")
+@click.option("-o", "--outdir", required=True,
+              help="Directory storing compiled results.")
+@click.option("-c", "--coords", is_flag=True, default=False,
+              help="Genearte coords.txt.xz files.")
+# fmt: on
+def collect(indir, outdir, coords):
+    collect_results(indir, outdir, coords)
+
+
+if __name__ == "__main__":
+    pass

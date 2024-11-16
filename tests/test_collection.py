@@ -1,5 +1,6 @@
 import unittest
 from wipe.modules.collection import (
+    compile_results_linearization,
     compile_results_checkm2,
     compile_results_prodigal,
     generate_coords,
@@ -7,6 +8,14 @@ from wipe.modules.collection import (
 
 
 class CollectionTests(unittest.TestCase):
+    def test_compile_results_linearization(self):
+        obs = compile_results_linearization(
+            "/projects/greengenes2/gg2_genomes/linearized_test/G"
+        )
+        obs.to_csv(
+            "./tests/tmp/linearization.tsv", index=False, header=True, sep="\t"
+        )
+
     def test_compile_results_checkm2(self):
         obs = compile_results_checkm2(
             "/projects/greengenes2/gg2_genomes/linearized_test/G"

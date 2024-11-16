@@ -1,9 +1,23 @@
 import os
 import lzma
-import skbio
+import gzip
+import json
 import pandas as pd
 from glob import glob
 from wipe.modules.utils import search_dirs
+
+
+def compile_results_linearization(indir):
+    data = []
+    files = search_dirs(indir, "linearization_*")
+
+    for file in files:
+        with gzip.open(file, "rt") as f:
+            stats = json.load(f)
+            data.append(stats[0])
+
+    df = pd.DataFrame(data)
+    return df
 
 
 def compile_results_checkm2(indir):
@@ -63,3 +77,21 @@ def concatenate_xz_files(file_list, output_file):
         for file in file_list:
             with lzma.open(file, mode="rb") as f:
                 out_file.write(f.read())
+
+
+def collect_results(indir, outdir, coords=False):
+    outpath_res = os.path.join(outdir, "metadata_stats.tsv")
+    outpath_coords = os.path.join(outdir, "coords.txt.xz")
+
+    df_lin = compile_results_linearization(indir)
+    df_qc = compile_results_checkm2(indir)
+    df_proteins = compile_results_prodigal(indir)
+
+    df = pd.merge(df_lin, df_qc, how="left", on="genome_id").merge(
+        df_proteins, how="left", on="genome_id"
+    )
+
+    df.to_csv(outpath_res, index=False, header=True, sep="\t")
+
+    if coords:
+        generate_coords(indir, outpath_coords)
