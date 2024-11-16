@@ -8,6 +8,7 @@ from wipe.modules.utils import (
     write_json_log,
     load_md,
     check_duplicated_genome_ids,
+    infer_gid_ncbi,
 )
 
 
@@ -33,18 +34,6 @@ def should_filter_contig_name(filt, contig_name):
         return False
 
 
-def infer_gid_ncbi(inpath):
-    """Infer genome id (GXXXXX) from ncbi-stype genome file name (GCF_XXXXXX_XX_genomic.fna)"""
-    fname = inpath.split("/")[-1]
-    ptn = re.compile(r"GC[FA]_([0-9]{9})\.[0-9]+_.*")
-    m = ptn.match(fname)
-    if m:
-        gid = "G" + m.group(1)
-        return gid
-    else:
-        raise ValueError("No valid genome ID provided or extracted.")
-
-
 def generate_inpath_outpath(inpath, ext, outdir, gid):
     gid = gid or infer_gid_ncbi(inpath)
     ext = ext.lstrip(".")
@@ -55,12 +44,13 @@ def generate_inpath_outpath(inpath, ext, outdir, gid):
     return gid, inpath, outdir, outpath
 
 
-def generate_log_entries(n_written, n_char, n_filtered, outpath):
+def generate_log_entries(gid, n_written, n_char, n_filtered, outpath):
     return {
+        "genome_id": gid,
+        "genome_path": os.path.abspath(outpath),
         "contigs_written": n_written,
         "chars_written": n_char,
         "contigs_filtered": n_filtered,
-        "outpath": outpath,
     }
 
 
@@ -75,14 +65,14 @@ def read_fasta(inpath):
     return records
 
 
-def check_outputs(outdir, outpath):
+def check_outputs(outdir, outpath, gid):
     """Check if expected outputs already exist."""
     genome_file_exists = False
     log_file_exists = False
     if exists(outdir):
         if exists(outpath):
             genome_file_exists = True
-        if exists(join(outdir, "linearization_stats.json.gz")):
+        if exists(join(outdir, f"linearization_stats_{gid}.json.gz")):
             log_file_exists = True
     return genome_file_exists and log_file_exists
 
@@ -99,7 +89,7 @@ def linearize_single_genome(
     )
 
     # Skip if expected outputs already exist
-    if check_outputs(outdir, outpath):
+    if check_outputs(outdir, outpath, gid):
         return
 
     # Error out if the input path does not exist
@@ -136,9 +126,11 @@ def linearize_single_genome(
                 else:
                     n_filtered += 1
 
-        log_data = generate_log_entries(n_written, n_char, n_filtered, outpath)
+        log_data = generate_log_entries(
+            gid, n_written, n_char, n_filtered, outpath
+        )
         write_json_log(
-            log_data, outdir, "linearization_stats.json.gz", append=True
+            log_data, outdir, f"linearization_stats_{gid}.json.gz", append=True
         )
 
 

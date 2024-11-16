@@ -22,6 +22,7 @@ from wipe.modules.utils import (
     gen_stats_data,
     gen_summary_data,
     gen_output_paths,
+    infer_gid_ncbi,
 )
 
 
@@ -273,6 +274,36 @@ class UtilsTests(unittest.TestCase):
             obs_stats_path, "/out/checkm2_stats_my_genome.json.gz"
         )
         self.assertEqual(obs_gid, "my_genome")
+
+    def test_infer_gid_ncbi_fna(self):
+        obs = infer_gid_ncbi("/path/to/GCF_000981955.1_ASM98195v1_genomic.fna")
+        exp = "G000981955"
+        self.assertEqual(obs, exp)
+
+    def test_infer_gid_ncbi_gz(self):
+        obs = infer_gid_ncbi(
+            "/path/to/GCF_000981955.1_ASM98195v1_genomic.fa.gz"
+        )
+        exp = "G000981955"
+        self.assertEqual(obs, exp)
+
+    def test_infer_gid_ncbi_xz(self):
+        obs = infer_gid_ncbi(
+            "/path/to/GCA_000981955.1_ASM98195v1_genomic.fasta.xz"
+        )
+        exp = "G000981955"
+        self.assertEqual(obs, exp)
+
+    def test_infer_gid_ncbi_error(self):
+        # must have 9 digits after GCF_
+        with self.assertRaises(ValueError) as context:
+            obs = infer_gid_ncbi(
+                "/path/to/GCF_0009819.1ASM98195v1_genomic.fasta.xz"
+            )
+        self.assertEqual(
+            str(context.exception),
+            "No valid genome ID provided or extracted: /path/to/GCF_0009819.1ASM98195v1_genomic.fasta.xz",
+        )
 
 
 if __name__ == "__main__":

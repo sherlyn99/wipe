@@ -9,7 +9,6 @@ from skbio.io import FormatIdentificationWarning
 from wipe.modules.linearize import (
     generate_gap_string,
     should_filter_contig_name,
-    infer_gid_ncbi,
     generate_inpath_outpath,
     generate_log_entries,
     read_fasta,
@@ -17,6 +16,8 @@ from wipe.modules.linearize import (
     linearize_single_genome,
     linearize_genomes,
 )
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
 class LinearizeTests(unittest.TestCase):
@@ -49,34 +50,6 @@ class LinearizeTests(unittest.TestCase):
         obs = should_filter_contig_name("plasmid,phage", ">contig2_phAge_C2")
         exp = True
         self.assertEqual(obs, exp)
-
-    def test_infer_gid_ncbi_fna(self):
-        obs = infer_gid_ncbi("/path/to/GCF_000981955.1_ASM98195v1_genomic.fna")
-        exp = "G000981955"
-        self.assertEqual(obs, exp)
-
-    def test_infer_gid_ncbi_gz(self):
-        obs = infer_gid_ncbi(
-            "/path/to/GCF_000981955.1_ASM98195v1_genomic.fa.gz"
-        )
-        exp = "G000981955"
-        self.assertEqual(obs, exp)
-
-    def test_infer_gid_ncbi_xz(self):
-        obs = infer_gid_ncbi(
-            "/path/to/GCA_000981955.1_ASM98195v1_genomic.fasta.xz"
-        )
-        exp = "G000981955"
-        self.assertEqual(obs, exp)
-
-    def test_infer_gid_ncbi_error(self):
-        with self.assertRaises(ValueError) as context:
-            obs = infer_gid_ncbi(
-                "/path/to/GCF_000981955.1ASM98195v1_genomic.fasta.xz"
-            )
-        self.assertEqual(
-            str(context.exception), "No valid genome ID provided or extracted."
-        )
 
     def test_generate_inpath_outpath_fna_gid(self):
         test_inpath = "/path/to/GCA_000981955.1_ASM98195v1_genomic"
@@ -147,18 +120,24 @@ class LinearizeTests(unittest.TestCase):
         self.assertEqual(obs_outpath, exp_outpath)
 
     def test_generate_log_entries(self):
+        test_gid = "G001"
         test_n_written = 100
         test_n_char = 10000
         test_n_filtered = 50
         test_outpath = "/path/to/outpath"
         obs = generate_log_entries(
-            test_n_written, test_n_char, test_n_filtered, test_outpath
+            test_gid,
+            test_n_written,
+            test_n_char,
+            test_n_filtered,
+            test_outpath,
         )
         exp = {
+            "genome_id": "G001",
+            "genome_path": "/path/to/outpath",
             "contigs_written": 100,
             "chars_written": 10000,
             "contigs_filtered": 50,
-            "outpath": "/path/to/outpath",
         }
         self.assertEqual(obs, exp)
 
@@ -259,7 +238,7 @@ class LinearizeTests(unittest.TestCase):
                 "000",
                 "981",
                 "955",
-                "linearization_stats.json.gz",
+                "linearization_stats_G000981955.json.gz",
             )
             self.assertTrue(
                 os.path.exists(logpath),
@@ -313,7 +292,7 @@ class LinearizeTests(unittest.TestCase):
                 "000",
                 "981",
                 "955",
-                "linearization_stats.json.gz",
+                "linearization_stats_G000981955.json.gz",
             )
             self.assertTrue(
                 os.path.exists(logpath),
@@ -367,7 +346,7 @@ class LinearizeTests(unittest.TestCase):
                 "000",
                 "981",
                 "955",
-                "linearization_stats.json.gz",
+                "linearization_stats_G000981955.json.gz",
             )
             self.assertTrue(
                 os.path.exists(logpath),
@@ -424,7 +403,7 @@ class LinearizeTests(unittest.TestCase):
                 "000",
                 "981",
                 "955",
-                "linearization_stats.json.gz",
+                "linearization_stats_G000981955.json.gz",
             )
             self.assertTrue(
                 os.path.exists(logpath),
@@ -478,7 +457,7 @@ class LinearizeTests(unittest.TestCase):
                 "000",
                 "000",
                 "001",
-                "linearization_stats.json.gz",
+                "linearization_stats_H000000001.json.gz",
             )
             self.assertTrue(
                 os.path.exists(logpath),
@@ -532,7 +511,7 @@ class LinearizeTests(unittest.TestCase):
                 "000",
                 "000",
                 "001",
-                "linearization_stats.json.gz",
+                "linearization_stats_H000000001.json.gz",
             )
             self.assertTrue(
                 os.path.exists(logpath),
@@ -562,7 +541,7 @@ class LinearizeTests(unittest.TestCase):
                     "000",
                     "000",
                     "001",
-                    "linearization_stats.json.gz",
+                    "linearization_stats_G000000001.json.gz",
                 ),
                 os.path.join(
                     test_outdir, "G", "000", "000", "002", "G000000002.fna.gz"
@@ -573,7 +552,7 @@ class LinearizeTests(unittest.TestCase):
                     "000",
                     "000",
                     "001",
-                    "linearization_stats.json.gz",
+                    "linearization_stats_G000000001.json.gz",
                 ),
             ]
 
@@ -606,7 +585,7 @@ class LinearizeTests(unittest.TestCase):
                     "000",
                     "981",
                     "955",
-                    "linearization_stats.json.gz",
+                    "linearization_stats_G000981955.json.gz",
                 ),
             ]
 
@@ -646,9 +625,9 @@ class LinearizeTests(unittest.TestCase):
                         "000",
                         "981",
                         "955",
-                        "linearization_stats.json.gz",
+                        "linearization_stats_G000981955.json.gz",
                     ),
-                    os.path.join(test_outdir, "linearization_err.json.gz"),
+                    os.path.join(test_outdir, "linearization_summary.json.gz"),
                 ]
 
                 for p in paths:
@@ -679,7 +658,7 @@ class LinearizeTests(unittest.TestCase):
                 )
 
                 paths = [
-                    os.path.join(test_outdir, "linearization_err.json.gz"),
+                    os.path.join(test_outdir, "linearization_summary.json.gz"),
                 ]
                 for p in paths:
                     self.assertTrue(
@@ -703,7 +682,7 @@ class LinearizeTests(unittest.TestCase):
                 )
 
                 paths = [
-                    os.path.join(test_outdir, "linearization_err.json.gz"),
+                    os.path.join(test_outdir, "linearization_summary.json.gz"),
                 ]
                 for p in paths:
                     self.assertTrue(
