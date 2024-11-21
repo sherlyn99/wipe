@@ -6,7 +6,7 @@ from wipe.modules.metadata import generate_metadata
 from wipe.modules.prodigal import run_prodigal_batch
 from wipe.modules.checkm2 import run_checkm2_batch
 from wipe.modules.collection import collect_results
-from wipe.modules.taxonomy import create_db, update_db
+from wipe.modules.gsearch import create_db, update_db
 
 # takes in a directory of genomes
 # linearize
@@ -118,6 +118,7 @@ def gsearch():
 # fmt: on
 def create(indir, outdir, nthreads):
     create_db(indir, outdir, nthreads)
+
 
 # fmt: off
 @gsearch.command()
