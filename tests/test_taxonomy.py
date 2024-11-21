@@ -45,7 +45,6 @@ class TaxonomyTests(unittest.TestCase):
         inpath = "tests/out/gsearch_results/gsearch_results.tsv"
         assembly_with_tax = ""
         outpath = ""
-
         process_search_results(inpath, assembly_with_tax, outpath)
 
     # def test_decompress(self):
