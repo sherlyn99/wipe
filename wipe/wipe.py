@@ -6,6 +6,7 @@ from wipe.modules.metadata import generate_metadata
 from wipe.modules.prodigal import run_prodigal_batch
 from wipe.modules.checkm2 import run_checkm2_batch
 from wipe.modules.collection import collect_results
+from wipe.modules.taxonomy import create_db, update_db
 
 # takes in a directory of genomes
 # linearize
@@ -65,19 +66,6 @@ def metadata(indir, ext, outdir, start_gid):
 # fmt: off
 @wipe.command()
 @click.option("-i", "--indir", required=True, type=click.Path(exists=True),
-              help="Input directory containing all genome files.")
-@click.option("-log", "--log_dir", required=True,
-              help="E.g. ./tests/data/out.")
-@click.option("-tmp", "--tmp_dir", required=True,
-              help="Tmp dir storing decompressed genome data.")
-# fmt: on
-def annotate(indir, log_dir, tmp_dir):
-    run_prodigal_batch(indir, log_dir, tmp_dir)
-
-
-# fmt: off
-@wipe.command()
-@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
               help="Input directory containing fa or fa.gz files.")
 @click.option("-l", "--logdir", required=True,
               help="Directory storing ./checkm2_summary.json.gz")
@@ -92,6 +80,19 @@ def qc(indir, logdir, dbpath, threads):
 # fmt: off
 @wipe.command()
 @click.option("-i", "--indir", required=True, type=click.Path(exists=True),
+              help="Input directory containing all genome files.")
+@click.option("-log", "--log_dir", required=True,
+              help="E.g. ./tests/data/out.")
+@click.option("-tmp", "--tmp_dir", required=True,
+              help="Tmp dir storing decompressed genome data.")
+# fmt: on
+def annotate(indir, log_dir, tmp_dir):
+    run_prodigal_batch(indir, log_dir, tmp_dir)
+
+
+# fmt: off
+@wipe.command()
+@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
               help="Input directory containing stats files.")
 @click.option("-o", "--outdir", required=True,
               help="Directory storing compiled results.")
@@ -100,6 +101,37 @@ def qc(indir, logdir, dbpath, threads):
 # fmt: on
 def collect(indir, outdir, coords):
     collect_results(indir, outdir, coords)
+
+
+@wipe.command()
+def gsearch():
+    pass
+
+
+# fmt: off
+@gsearch.command()
+@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
+              help="Input directory containing fasta or fna.gz files.")
+@click.option("-o", "--outdir", required=True,
+              help="Directory storing produced gsearch db files.")
+@click.option("-t", "--nthreads", default=1, help="Number of threads to use (default is 1).")
+# fmt: on
+def create(indir, outdir, nthreads):
+    create_db(indir, outdir, nthreads)
+
+# fmt: off
+@gsearch.command()
+@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
+              help="Input directory containing new fasta or fna.gz files.")
+@click.option("-db", "--existing-db", required=True, type=click.Path(exists=True),
+              help="Path to the directory containing existing gsearch db.") 
+@click.option("-o", "--outdir", required=True,
+              help="Directory storing new gsearch db files.")
+@click.option("-t", "--nthreads", default=1, help="Number of threads to use (default is 1).")
+@click.option("-b", "--backup-dir", help="Directory for backing up the existing db files.")
+# fmt: on
+def update(indir, db, outdir, nthreads, backup_dir):
+    update_db(db, indir, nthreads=nthreads, backup_dir=backup_dir)
 
 
 if __name__ == "__main__":

@@ -218,6 +218,60 @@ def load_assembly(inpath):
     return df_assembly
 
 
+def load_assembly_add_gpath(inpath):
+    df_assembly = load_assembly(inpath)
+
+
+def check_required_cols(df, required_cols):
+    required_cols = set(required_cols)
+    if not required_cols.issubset(df.columns):
+        raise ValueError(
+            f"Missing required columns: {required_cols - set(df.columns)}"
+        )
+
+
+def create_new_genomes_dir(glist, dir):
+    """Move all new genomes into a directory"""
+    for file in glist:
+        shutil.copy(file, dir)
+
+
+import subprocess
+
+
+def run_command(commands, cwd=None):
+    """
+    Run a shell command with detailed error handling.
+
+    Args:
+        commands (list): The command and its arguments to run.
+        cwd (str, optional): Directory to execute the command in.
+
+    Returns:
+        subprocess.CompletedProcess: The result of the executed command.
+
+    Raises:
+        subprocess.CalledProcessError: If the command returns a non-zero exit code.
+        Exception: For any other unexpected errors.
+    """
+    try:
+        result = subprocess.run(
+            commands, cwd=cwd, capture_output=True, text=True, check=True
+        )
+        return result
+    except subprocess.CalledProcessError as e:
+        print(
+            f"Subprocess error: Command failed with exit code {e.returncode}"
+        )
+        print(f"Command: {' '.join(e.cmd)}")
+        print(f"Standard output:\n{e.stdout}")
+        print(f"Standard error:\n{e.stderr}")
+        raise
+    except Exception as e:
+        print(f"Unexpected error: {type(e).__name__}: {e}")
+        raise
+
+
 # def setup_logger_with_stream(output_dir):
 #     logger = logging.getLogger("wipe")
 #     logger.setLevel(logging.INFO)
