@@ -29,9 +29,9 @@ def read(fname):
 def load_md(md_path):
     md_df = pd.read_csv(md_path, sep="\t", header=None, low_memory=False)
     if md_df.shape[1] == 2:
-        md_df.columns = ["filepath", "genome_id"]
+        md_df.columns = ["local_path", "genome_id"]
     elif md_df.shape[1] == 1:
-        md_df.columns = ["filepath"]
+        md_df.columns = ["local_path"]
     else:
         raise ValueError(
             f"Unexpected number of columns in metadata {md_path}. Expected 1 or 2 columns."
@@ -147,8 +147,9 @@ def search_dirs(start_dir, basename_pattern):
     return dirs
 
 
-def gen_output_paths(process, inpath, outdir):
-    gid = os.path.basename(inpath).split(".")[0]
+def gen_output_paths(process, inpath, outdir, gid=None):
+    if not gid:
+        gid = os.path.basename(inpath).split(".")[0]
 
     outdir_path = os.path.join(outdir, f"{process}_out_{gid}")
     stats_path = os.path.join(outdir, f"{process}_stats_{gid}.json.gz")
@@ -159,8 +160,9 @@ def gen_path(pdir, filename):
     return os.path.join(pdir, filename)
 
 
-def gen_stats_data(process, inpath):
-    gid = os.path.basename(inpath).split(".")[0]
+def gen_stats_data(process, inpath, gid=None):
+    if not gid:
+        gid = os.path.basename(inpath).split(".")[0]
 
     stats_data = {
         "genome_id": gid,
@@ -239,7 +241,7 @@ def create_new_genomes_dir(glist, dir):
 import subprocess
 
 
-def run_command(commands, cwd=None):
+def run_command(commands, cwd=None, use_shell=False):
     """
     Run a shell command with detailed error handling.
 
@@ -256,7 +258,12 @@ def run_command(commands, cwd=None):
     """
     try:
         result = subprocess.run(
-            commands, cwd=cwd, capture_output=True, text=True, check=True
+            commands,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=True,
+            shell=use_shell,
         )
         return result
     except subprocess.CalledProcessError as e:

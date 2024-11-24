@@ -2,6 +2,7 @@ import os
 import gzip
 import json
 import subprocess
+import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from wipe.modules.utils import (
@@ -12,6 +13,7 @@ from wipe.modules.utils import (
     check_outputs,
     check_log_and_retrieve_gid,
     get_files_all_fa,
+    check_required_cols,
 )
 
 
@@ -89,7 +91,7 @@ def check_outputs_checkm2(outdir_path, stats_path):
     return file_existence and status
 
 
-def run_checkm2_single(inpath, outdir, dbpath, threads, genes=None):
+def run_checkm2_single(inpath, outdir, dbpath, threads, gid=None, genes=None):
     """
     NB: Filenames should be in the format of info1_info2.fna(.gz)
 
@@ -97,6 +99,7 @@ def run_checkm2_single(inpath, outdir, dbpath, threads, genes=None):
     -------
     run_checkm2_single("/data/001/002/003/G001002003.fa.gz",
                        "/data/001/002/003/",
+                       "/home/y1weng/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd",
                        4)
 
     Example Outputs
@@ -104,7 +107,9 @@ def run_checkm2_single(inpath, outdir, dbpath, threads, genes=None):
     "/data/001/002/003/checkm2_out_G001002003"
     "/data/001/002/003/checkm2_stats_G001002003.json.gz"
     """
-    outdir_path, stats_path, _ = gen_output_paths("checkm2", inpath, outdir)
+    outdir_path, stats_path, _ = gen_output_paths(
+        "checkm2", inpath, outdir, gid
+    )
 
     # skip if already completed
     if check_outputs_checkm2(outdir_path, stats_path):
@@ -135,7 +140,7 @@ def run_checkm2_single(inpath, outdir, dbpath, threads, genes=None):
             json.dump(stats_data, file, indent=4)
 
 
-def run_checkm2_batch(indir, logdir, dbpath, threads):
+def run_checkm2_batch(indir, logdir, dbpath, threads, md=None, outdir=None):
     """
     Example
     -------
@@ -144,23 +149,50 @@ def run_checkm2_batch(indir, logdir, dbpath, threads):
                       "/home/y1weng/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd",
                       4)
     """
-    filelist = get_files_all_fa(indir)
+    if md:
+        md_df = pd.read_csv(md, sep="\t", low_memory=False)
+        check_required_cols(md_df, ["genome_id", "local_path"])
+        filelist = md_df["local_path"].values
+    else:
+        filelist = get_files_all_fa(indir)
+
     summary_path, summary_data = gen_summary_checkm2(logdir)
 
     with gzip.open(summary_path, "wt") as file:
         json.dump(summary_data, file, indent=4)
 
-    for file in filelist:
-        outdir = os.path.dirname(file)
-        try:
-            run_checkm2_single(file, outdir, dbpath, threads)
-        except Exception as e:
-            if isinstance(summary_data["error"], list):
-                summary_data["error"].append(f"{file}: {e}")
-            else:
-                summary_data["error"] = [f"{file}: {e}"]
+    if md and outdir:
+        Path(outdir).mkdir(parents=True, exist_ok=True)
+        gid_list = md_df["genome_id"].values
+        for file, gid in zip(filelist, gid_list):
+            file_outdir = os.path.join(
+                outdir, gid[0], gid[1:4], gid[4:7], gid[7:10]
+            )
+            try:
+                run_checkm2_single(file, file_outdir, dbpath, threads, gid=gid)
+            except Exception as e:
+                if isinstance(summary_data["error"], list):
+                    summary_data["error"].append(f"{file}: {e}")
+                else:
+                    summary_data["error"] = [f"{file}: {e}"]
 
-    summary_data["status"] = "completed"
-    summary_data["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with gzip.open(summary_path, "wt") as file:
-        json.dump(summary_data, file, indent=4, ensure_ascii=False)
+        summary_data["status"] = "completed"
+        summary_data["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with gzip.open(summary_path, "wt") as file:
+            json.dump(summary_data, file, indent=4, ensure_ascii=False)
+
+    else:
+        for file in filelist:
+            file_outdir = os.path.dirname(file)
+            try:
+                run_checkm2_single(file, file_outdir, dbpath, threads)
+            except Exception as e:
+                if isinstance(summary_data["error"], list):
+                    summary_data["error"].append(f"{file}: {e}")
+                else:
+                    summary_data["error"] = [f"{file}: {e}"]
+
+        summary_data["status"] = "completed"
+        summary_data["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with gzip.open(summary_path, "wt") as file:
+            json.dump(summary_data, file, indent=4, ensure_ascii=False)

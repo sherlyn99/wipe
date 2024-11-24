@@ -5,7 +5,7 @@ from wipe.modules.linearize import linearize_genomes
 from wipe.modules.metadata import generate_metadata
 from wipe.modules.prodigal import run_prodigal_batch
 from wipe.modules.checkm2 import run_checkm2_batch
-from wipe.modules.collection import collect_results
+from wipe.modules.collection import compile_results
 from wipe.modules.gsearch import create_db, update_db
 
 # takes in a directory of genomes
@@ -27,9 +27,41 @@ def wipe():
 
 # fmt: off
 @wipe.command()
-@click.option("-m", "--metadata", required=True, type=click.Path(exists=True),
+@click.option("-i", "--indir", type=click.Path(exists=True),
+              help="Input directory containing fa or fa.gz files.")
+@click.option("-l", "--logdir", required=True,
+              help="Directory storing ./checkm2_summary.json.gz")
+@click.option("-db", "--dbpath", default="/home/y1weng/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd",
+              help="Path to the checkm2 database.")
+@click.option("-t", "--threads", default=4)
+@click.option("-m", "--metadata", type=click.Path(exists=True))
+@click.option("-o", "--outdir")
+# fmt: on
+def qc(indir, logdir, dbpath, threads, metadata, outdir):
+    run_checkm2_batch(
+        indir, logdir, dbpath, threads, md=metadata, outdir=outdir
+    )
+
+
+# fmt: off
+@wipe.command()
+@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
+              help="Input directory containing stats files.")
+@click.option("-o", "--outdir", required=True,
+              help="Directory storing compiled results.")
+@click.option("-c", "--coords", is_flag=True, default=False,
+              help="Genearte coords.txt.xz files.")
+@click.option("--checkm2", is_flag=True, default=None, help="Compile checkm2 results")
+# fmt: on
+def compile(indir, outdir, coords, checkm2):
+    compile_results(indir, outdir, checkm2=checkm2, coords=coords)
+
+
+# fmt: off
+@wipe.command()
+@click.option("-m", "--metadata", type=click.Path(exists=True),
               help="Tab-delimited mapping between genome filenames (without extension) and genome id (optional)")
-@click.option("-e", "--ext", required=True,
+@click.option("-e", "--ext",
               help="Filename extension following genome ID")
 @click.option("-o", "--outdir", required=True,
               help="Output directory for multi-Fasta file")
@@ -37,9 +69,10 @@ def wipe():
               help='Fill sequence gaps with a string, use "*" to indicate repeats, e.g., "N*20"')
 @click.option("-f", "--filt", default=None,
               help="Exclude sequences with any of the comma-delimited words in title, e.g., 'plasmid,phage'")
+@click.option("-a", "--assembly", type=click.Path(exists=True))
 # fmt: on
-def linearize(metadata, ext, outdir, gap, filt):
-    linearize_genomes(metadata, ext, outdir, gap, filt)
+def linearize(metadata, ext, outdir, gap, filt, assembly):
+    linearize_genomes(metadata, ext, outdir, gap, filt, assembly)
 
 
 # fmt: off
@@ -66,20 +99,6 @@ def metadata(indir, ext, outdir, start_gid):
 # fmt: off
 @wipe.command()
 @click.option("-i", "--indir", required=True, type=click.Path(exists=True),
-              help="Input directory containing fa or fa.gz files.")
-@click.option("-l", "--logdir", required=True,
-              help="Directory storing ./checkm2_summary.json.gz")
-@click.option("-db", "--dbpath", default="/home/y1weng/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd",
-              help="Path to the checkm2 database.")
-@click.option("-t", "--threads", default=4)
-# fmt: on
-def qc(indir, logdir, dbpath, threads):
-    run_checkm2_batch(indir, logdir, dbpath, threads)
-
-
-# fmt: off
-@wipe.command()
-@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
               help="Input directory containing all genome files.")
 @click.option("-log", "--log_dir", required=True,
               help="E.g. ./tests/data/out.")
@@ -90,20 +109,7 @@ def annotate(indir, log_dir, tmp_dir):
     run_prodigal_batch(indir, log_dir, tmp_dir)
 
 
-# fmt: off
-@wipe.command()
-@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
-              help="Input directory containing stats files.")
-@click.option("-o", "--outdir", required=True,
-              help="Directory storing compiled results.")
-@click.option("-c", "--coords", is_flag=True, default=False,
-              help="Genearte coords.txt.xz files.")
-# fmt: on
-def collect(indir, outdir, coords):
-    collect_results(indir, outdir, coords)
-
-
-@wipe.command()
+@wipe.group()
 def gsearch():
     pass
 
@@ -136,4 +142,4 @@ def update(indir, db, outdir, nthreads, backup_dir):
 
 
 if __name__ == "__main__":
-    pass
+    wipe()

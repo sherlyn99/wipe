@@ -23,6 +23,7 @@ def compile_results_linearization(indir):
 def compile_results_checkm2(indir):
     dirs = search_dirs(indir, "checkm2_out*")
     dfs = []
+    genome_ids = []
 
     for dir in dirs:
         quality_report_path = os.path.join(dir, "quality_report.tsv")
@@ -30,8 +31,11 @@ def compile_results_checkm2(indir):
             df = pd.read_csv(quality_report_path, sep="\t")
             dfs.append(df)
 
+            gid = os.path.basename(dir).split("_")[-1]
+            genome_ids.append(gid)
+
     combined_df = pd.concat(dfs, ignore_index=True)
-    combined_df = combined_df.rename(columns={"Name": "genome_id"})
+    combined_df.insert(0, "genome_id", genome_ids)
     return combined_df
 
 
@@ -79,19 +83,35 @@ def concatenate_xz_files(file_list, output_file):
                 out_file.write(f.read())
 
 
-def collect_results(indir, outdir, coords=False):
+def compile_results(
+    indir,
+    outdir,
+    checkm2=None,
+    linearization=None,
+    proteins=None,
+    coords=False,
+):
     outpath_res = os.path.join(outdir, "metadata_stats.tsv")
-    outpath_coords = os.path.join(outdir, "coords.txt.xz")
+    if checkm2:
+        df_checkm2 = compile_results_checkm2(indir)
+        out_file = os.path.join(outdir, "results_checkm2.tsv")
+        df_checkm2.to_csv(out_file, index=False, header=True, sep="\t")
+    if linearization:
+        df_lin = compile_results_linearization(indir)
+        out_file = os.path.join(outdir, "results_linearization.tsv")
+        df_lin.to_csv(out_file, index=False, header=True, sep="\t")
 
-    df_lin = compile_results_linearization(indir)
-    df_qc = compile_results_checkm2(indir)
-    df_proteins = compile_results_prodigal(indir)
+    if proteins:
+        df_proteins = compile_results_prodigal(indir)
+        out_file = os.path.join(outdir, "results_proteins.tsv")
+        df_proteins.to_csv(out_file, index=False, header=True, sep="\t")
 
-    df = pd.merge(df_lin, df_qc, how="left", on="genome_id").merge(
-        df_proteins, how="left", on="genome_id"
-    )
+        if coords:
+            outpath_coords = os.path.join(outdir, "coords.txt.xz")
+            generate_coords(indir, outpath_coords)
 
-    df.to_csv(outpath_res, index=False, header=True, sep="\t")
+    # df = pd.merge(df_lin, df_qc, how="left", on="genome_id").merge(
+    #     df_proteins, how="left", on="genome_id"
+    # )
 
-    if coords:
-        generate_coords(indir, outpath_coords)
+    # df.to_csv(outpath_res, index=False, header=True, sep="\t")
