@@ -39,6 +39,15 @@ def load_md(md_path):
     return md_df
 
 
+def load_metadata(inpath):
+    md_df = pd.read_csv(inpath, sep="\t", low_memory=False)
+    return md_df
+
+
+def create_outdir(outdir_path):
+    Path(outdir_path).mkdir(parents=True, exist_ok=True)
+
+
 def check_duplicated_genome_ids(md_df):
     duplicaed_gids = md_df[md_df["genome_id"].duplicated()]
     if not duplicaed_gids.empty:
@@ -241,13 +250,15 @@ def create_new_genomes_dir(glist, dir):
 import subprocess
 
 
-def run_command(commands, cwd=None, use_shell=False):
+def run_command(commands, cwd=None, use_shell=False, logfile=None):
     """
-    Run a shell command with detailed error handling.
+    Run a shell command with detailed error handling. If a logfile is provided,
+    the output will be written to the logfile, otherwise, it will be printed.
 
     Args:
         commands (list): The command and its arguments to run.
         cwd (str, optional): Directory to execute the command in.
+        logfile (str, optional): Path to the logfile to write output to.
 
     Returns:
         subprocess.CompletedProcess: The result of the executed command.
@@ -256,6 +267,15 @@ def run_command(commands, cwd=None, use_shell=False):
         subprocess.CalledProcessError: If the command returns a non-zero exit code.
         Exception: For any other unexpected errors.
     """
+
+    # Function to log or print the message
+    def log_message(message):
+        if logfile:
+            with open(logfile, "a") as log:
+                log.write(message + "\n")
+        else:
+            print(message)
+
     try:
         result = subprocess.run(
             commands,
@@ -265,17 +285,29 @@ def run_command(commands, cwd=None, use_shell=False):
             check=True,
             shell=use_shell,
         )
+
+        # Log or print the standard output
+        log_message(f"Standard output:\n{result.stdout}\n")
+        log_message(f"Standard error:\n{result.stderr}\n")
+
         return result
+
     except subprocess.CalledProcessError as e:
-        print(
-            f"Subprocess error: Command failed with exit code {e.returncode}"
+        # Handle and log the error if the subprocess fails
+        log_message(
+            f"Subprocess error:\nCommand failed with exit code {e.returncode}\n"
         )
-        print(f"Command: {' '.join(e.cmd)}")
-        print(f"Standard output:\n{e.stdout}")
-        print(f"Standard error:\n{e.stderr}")
+        if use_shell:
+            log_message(f"Command:\n{commands}\n")
+        else:
+            log_message(f"Command:\n{' '.join(e.cmd)}\n")
+        log_message(f"Standard output:\n{e.stdout}\n")
+        log_message(f"Standard error:\n{e.stderr}\n")
         raise
+
     except Exception as e:
-        print(f"Unexpected error: {type(e).__name__}: {e}")
+        # Handle and log unexpected errors
+        log_message(f"Unexpected error: {type(e).__name__}: {e}")
         raise
 
 

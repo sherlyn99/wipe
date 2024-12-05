@@ -14,6 +14,10 @@ from wipe.modules.utils import (
     check_log_and_retrieve_gid,
     get_files_all_fa,
     check_required_cols,
+    create_outdir,
+    run_command,
+    load_metadata,
+    check_required_cols,
 )
 
 
@@ -24,7 +28,9 @@ def gen_command_checkm2(
     dbpath,
     genes=None,
 ):
-    """NB: --genes parameter not used currently"""
+    """NB: --genes parameter not used currently
+    NB: checkm2 takes fna.gz directly
+    """
     commands = [
         "checkm2",
         "predict",
@@ -91,53 +97,53 @@ def check_outputs_checkm2(outdir_path, stats_path):
     return file_existence and status
 
 
-def run_checkm2_single(inpath, outdir, dbpath, threads, gid=None, genes=None):
-    """
-    NB: Filenames should be in the format of info1_info2.fna(.gz)
+# def run_checkm2_single(inpath, outdir, dbpath, threads, gid=None, genes=None):
+#     """
+#     NB: Filenames should be in the format of info1_info2.fna(.gz)
 
-    Example
-    -------
-    run_checkm2_single("/data/001/002/003/G001002003.fa.gz",
-                       "/data/001/002/003/",
-                       "/home/y1weng/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd",
-                       4)
+#     Example
+#     -------
+#     run_checkm2_single("/data/001/002/003/G001002003.fa.gz",
+#                        "/data/001/002/003/",
+#                        "/home/y1weng/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd",
+#                        4)
 
-    Example Outputs
-    ----------------
-    "/data/001/002/003/checkm2_out_G001002003"
-    "/data/001/002/003/checkm2_stats_G001002003.json.gz"
-    """
-    outdir_path, stats_path, _ = gen_output_paths(
-        "checkm2", inpath, outdir, gid
-    )
+#     Example Outputs
+#     ----------------
+#     "/data/001/002/003/checkm2_out_G001002003"
+#     "/data/001/002/003/checkm2_stats_G001002003.json.gz"
+#     """
+#     outdir_path, stats_path, _ = gen_output_paths(
+#         "checkm2", inpath, outdir, gid
+#     )
 
-    # skip if already completed
-    if check_outputs_checkm2(outdir_path, stats_path):
-        return
+#     # skip if already completed
+#     if check_outputs_checkm2(outdir_path, stats_path):
+#         return
 
-    Path(outdir_path).mkdir(parents=True, exist_ok=True)
-    commands = gen_command_checkm2(inpath, threads, outdir_path, dbpath, genes)
-    stats_data = gen_stats_data_checkm2(inpath, outdir_path)
+#     Path(outdir_path).mkdir(parents=True, exist_ok=True)
+#     commands = gen_command_checkm2(inpath, threads, outdir_path, dbpath, genes)
+#     stats_data = gen_stats_data_checkm2(inpath, outdir_path)
 
-    with gzip.open(stats_path, "wt") as file:
-        json.dump(stats_data, file, indent=4)
+#     with gzip.open(stats_path, "wt") as file:
+#         json.dump(stats_data, file, indent=4)
 
-    try:
-        p = subprocess.run(
-            commands, capture_output=True, text=True, check=True
-        )
-        stats_data["status"] = "success"
+#     try:
+#         p = subprocess.run(
+#             commands, capture_output=True, text=True, check=True
+#         )
+#         stats_data["status"] = "success"
 
-    except subprocess.CalledProcessError as e:
-        stats_data["status"] = "failure"
-        stats_data["error"] = e.stderr  # Error message from Prodigal
-    except FileNotFoundError as e:
-        stats_data["status"] = "failure"
-        stats_data["error"] = str(e)
-    finally:
-        stats_data["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with gzip.open(stats_path, "wt") as file:
-            json.dump(stats_data, file, indent=4)
+#     except subprocess.CalledProcessError as e:
+#         stats_data["status"] = "failure"
+#         stats_data["error"] = e.stderr  # Error message from Prodigal
+#     except FileNotFoundError as e:
+#         stats_data["status"] = "failure"
+#         stats_data["error"] = str(e)
+#     finally:
+#         stats_data["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+#         with gzip.open(stats_path, "wt") as file:
+#             json.dump(stats_data, file, indent=4)
 
 
 def run_checkm2_batch(indir, logdir, dbpath, threads, md=None, outdir=None):
@@ -196,3 +202,65 @@ def run_checkm2_batch(indir, logdir, dbpath, threads, md=None, outdir=None):
         summary_data["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with gzip.open(summary_path, "wt") as file:
             json.dump(summary_data, file, indent=4, ensure_ascii=False)
+
+
+def run_checkm2_single(
+    infile_path, outdir_path, dbpath, threads, logfile_path
+):
+    """
+    NB
+    ---
+    Takes about 2-3 minutes using 64 threads.
+
+    Example
+    -------
+    run_checkm2_single(
+        "./wol3_prototype/rawdata/external/SMGC_1.fa.gz",
+        "./output2/checkm2_test_out",
+        "/home/y1weng/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd",
+        64,
+        logfile_path="./output2/checkm2_test_out/run_checkm2.log",
+    )
+    """
+    # skip if already completed
+    if check_outputs(
+        [
+            os.path.join(outdir_path, "checkm2.log"),
+            os.path.join(outdir_path, "quality_report.tsv"),
+        ]
+    ):
+        return
+
+    create_outdir(outdir_path)
+    commands = gen_command_checkm2(
+        infile_path,
+        threads,
+        outdir_path,
+        dbpath,
+    )
+    run_command(commands, logfile=logfile_path)
+
+
+def run_checkm2_batch(metadata, outdir, dbpath, threads):
+    """
+    Example
+    -------
+    run_checkm2_batch(
+        "./wol3_prototype/md_prototype_test.txt",
+        "./output2/checkm2_test_out",
+        "/home/y1weng/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd",
+        64,
+    )
+    """
+    df_md = load_metadata(metadata)
+    check_required_cols(df_md, ["genome_id", "genome_path"])
+    for row in df_md.itertuples():
+        gid = row.genome_id
+        infile_path = row.genome_path
+        outdir_path = os.path.join(
+            outdir, gid[0], gid[1:4], gid[4:7], gid[7:10]
+        )
+        logfile_path = os.path.join(outdir_path, f"{gid}_run_checkm2.log")
+        run_checkm2_single(
+            infile_path, outdir_path, dbpath, threads, logfile_path
+        )
