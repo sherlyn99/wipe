@@ -9,7 +9,8 @@ from wipe.modules.checkm2 import run_checkm2_batch
 from wipe.modules.collection import compile_results
 from wipe.modules.gsearch import create_db, update_db
 from wipe.modules.annotate import annotate_multiple
-from wipe.modules.barrnap import run_barrnap_single, extract_16s_from_tlp
+from wipe.modules.barrnap import run_barrnap_single
+from wipe.modules.recover_16s import extract_16s_from_tlp
 from wipe.modules.utils import load_metadata
 
 
@@ -48,6 +49,42 @@ def qc(metadata, outdir, dbpath, threads):
     run_checkm2_batch(metadata, outdir, dbpath, threads)
 
 
+# fmt: off
+@wipe.command()
+@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
+              help="Input directory containing stats files.")
+@click.option("-o", "--outdir", required=True,
+              help="Directory storing compiled results.")
+@click.option("-c", "--coords", is_flag=True, default=False,
+              help="Genearte coords.txt.xz files.")
+@click.option("--checkm2", is_flag=True, default=None, help="Compile checkm2 results")
+# fmt: on
+def compile(indir, outdir, coords, checkm2):
+    compile_results(indir, outdir, checkm2=checkm2, coords=coords)
+
+
+# look at distribution of contamination v.s. completion
+# filter genomes
+
+# annotate 16s
+
+# annotate marker genes
+
+# protocol selection
+# - completion
+# - contamination
+# - filter and select based on marker gene content
+# - bindash2 and selection
+
+# tree building
+# - marker gene extraction
+# - multiple sequence alignment
+# - build tree
+
+
+### old code
+
+
 @wipe.command()
 @click.option("--metadata", type=click.Path(exists=True), required=True)
 @click.option("--outdir", required=True)
@@ -62,20 +99,6 @@ def annotate_16s(metadata, outdir):
 
         if out_file_tsv and os.path.getsize(out_file_tsv) == 0:
             extract_16s_from_tlp(out_file_tsv, name, outdir)
-
-
-# fmt: off
-@wipe.command()
-@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
-              help="Input directory containing stats files.")
-@click.option("-o", "--outdir", required=True,
-              help="Directory storing compiled results.")
-@click.option("-c", "--coords", is_flag=True, default=False,
-              help="Genearte coords.txt.xz files.")
-@click.option("--checkm2", is_flag=True, default=None, help="Compile checkm2 results")
-# fmt: on
-def compile(indir, outdir, coords, checkm2):
-    compile_results(indir, outdir, checkm2=checkm2, coords=coords)
 
 
 # fmt: off
