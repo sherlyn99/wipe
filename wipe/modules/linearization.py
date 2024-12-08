@@ -48,7 +48,7 @@ def should_filter_contig_name(filt, contig_name):
 def generate_log_entries(gid, n_written, n_char, n_filtered, outfile_path):
     return {
         "genome_id": gid,
-        "lgenome_path": os.path.abspath(outfile_path),
+        "lgenome_path": outfile_path,
         "contigs_written": n_written,
         "chars_written": n_char,
         "contigs_filtered": n_filtered,
