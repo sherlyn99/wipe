@@ -2,11 +2,12 @@ import os
 import click
 from os.path import join
 from wipe.modules.constants import MSG_WELCOME
-from wipe.modules.linearize import linearize_genomes
-from wipe.modules.metadata import generate_metadata
-from wipe.modules.prodigal import run_prodigal_batch
 from wipe.modules.checkm2 import run_checkm2_batch
 from wipe.modules.collection import compile_results
+from wipe.modules.linearization import linearization_batch
+
+from wipe.modules.metadata import generate_metadata
+from wipe.modules.prodigal import run_prodigal_batch
 from wipe.modules.gsearch import create_db, update_db
 from wipe.modules.annotate import annotate_multiple
 from wipe.modules.barrnap import run_barrnap_single
@@ -63,6 +64,21 @@ def compile(indir, outdir, coords, checkm2):
     compile_results(indir, outdir, checkm2=checkm2, coords=coords)
 
 
+# fmt: off
+@wipe.command()
+@click.option("-m", "--metadata", type=click.Path(exists=True),
+              help="Tab-delimited mapping between genome filenames (without extension) and genome id (optional)")
+@click.option("-o", "--outdir", required=True,
+              help="Output directory for multi-Fasta file")
+@click.option("-g", "--gap", default=None,
+              help='Fill sequence gaps with a string, use "*" to indicate repeats, e.g., "N*20"')
+@click.option("-f", "--filt", default=None,
+              help="Exclude sequences with any of the comma-delimited words in title, e.g., 'plasmid,phage'")
+# fmt: on
+def linearize(metadata, outdir, gap, filt):
+    linearization_batch(metadata, outdir, gap, filt)
+
+
 # look at distribution of contamination v.s. completion
 # filter genomes
 
@@ -99,24 +115,6 @@ def annotate_16s(metadata, outdir):
 
         if out_file_tsv and os.path.getsize(out_file_tsv) == 0:
             extract_16s_from_tlp(out_file_tsv, name, outdir)
-
-
-# fmt: off
-@wipe.command()
-@click.option("-m", "--metadata", type=click.Path(exists=True),
-              help="Tab-delimited mapping between genome filenames (without extension) and genome id (optional)")
-@click.option("-e", "--ext",
-              help="Filename extension following genome ID")
-@click.option("-o", "--outdir", required=True,
-              help="Output directory for multi-Fasta file")
-@click.option("-g", "--gap", default=None,
-              help='Fill sequence gaps with a string, use "*" to indicate repeats, e.g., "N*20"')
-@click.option("-f", "--filt", default=None,
-              help="Exclude sequences with any of the comma-delimited words in title, e.g., 'plasmid,phage'")
-@click.option("-a", "--assembly", type=click.Path(exists=True))
-# fmt: on
-def linearize(metadata, ext, outdir, gap, filt, assembly):
-    linearize_genomes(metadata, ext, outdir, gap, filt, assembly)
 
 
 # fmt: off
