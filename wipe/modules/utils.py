@@ -145,13 +145,16 @@ def get_files_all_fa(indir):
     return filelist
 
 
-def search_dirs(start_dir, basename_pattern):
+def search_dirs(start_dir, basename_pattern=None):
     """Does recursive search for directory/file.
     Example
     -------
     search_dirs("./tests/data/, "checkm2_out*)
     """
-    dir_pattern = os.path.join(start_dir, "**", basename_pattern)
+    if not basename_pattern:
+        dir_pattern = os.path.join(start_dir, "**")
+    else:
+        dir_pattern = os.path.join(start_dir, "**", basename_pattern)
     dirs = glob(dir_pattern, recursive=True)
     return dirs
 

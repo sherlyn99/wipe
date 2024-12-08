@@ -21,7 +21,7 @@ def compile_results_linearization(indir):
 
 
 def compile_results_checkm2(indir):
-    dirs = search_dirs(indir, "checkm2_out*")
+    dirs = search_dirs(indir)
     dfs = []
     genome_ids = []
 
@@ -31,7 +31,7 @@ def compile_results_checkm2(indir):
             df = pd.read_csv(quality_report_path, sep="\t")
             dfs.append(df)
 
-            gid = os.path.basename(dir).split("_")[-1]
+            gid = "".join(dir.split("/")[-4:])
             genome_ids.append(gid)
 
     combined_df = pd.concat(dfs, ignore_index=True)
