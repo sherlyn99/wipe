@@ -59,9 +59,16 @@ def qc(metadata, outdir, dbpath, threads):
 @click.option("-c", "--coords", is_flag=True, default=False,
               help="Genearte coords.txt.xz files.")
 @click.option("--checkm2", is_flag=True, default=None, help="Compile checkm2 results")
+@click.option("--linearization", is_flag=True, default=None, help="Compile linearization results")
 # fmt: on
-def compile(indir, outdir, coords, checkm2):
-    compile_results(indir, outdir, checkm2=checkm2, coords=coords)
+def compile(indir, outdir, coords, checkm2, linearization):
+    compile_results(
+        indir,
+        outdir,
+        checkm2=checkm2,
+        linearization=linearization,
+        coords=coords,
+    )
 
 
 # fmt: off

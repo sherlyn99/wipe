@@ -8,16 +8,18 @@ from wipe.modules.utils import search_dirs
 
 
 def compile_results_linearization(indir):
+    dirs = search_dirs(indir)
     data = []
-    files = search_dirs(indir, "linearization_*")
+    dfs = []
 
-    for file in files:
-        with gzip.open(file, "rt") as f:
-            stats = json.load(f)
-            data.append(stats[0])
+    for dir in dirs:
+        quality_report_path = os.path.join(dir, "linearization.tsv")
+        if os.path.exists(quality_report_path):
+            df = pd.read_csv(quality_report_path, sep="\t")
+            dfs.append(df)
 
-    df = pd.DataFrame(data)
-    return df
+    combined_df = pd.concat(dfs, ignore_index=True)
+    return combined_df
 
 
 def compile_results_checkm2(indir):
