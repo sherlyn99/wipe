@@ -7,7 +7,6 @@ from wipe.modules.collection import compile_results
 from wipe.modules.linearization import linearization_batch
 
 from wipe.modules.metadata import generate_metadata
-from wipe.modules.prodigal import run_prodigal_batch
 from wipe.modules.gsearch import create_db, update_db
 from wipe.modules.annotate import annotate_multiple
 from wipe.modules.barrnap import run_barrnap_single
@@ -60,13 +59,17 @@ def qc(metadata, outdir, dbpath, threads):
               help="Genearte coords.txt.xz files.")
 @click.option("--checkm2", is_flag=True, default=None, help="Compile checkm2 results")
 @click.option("--linearization", is_flag=True, default=None, help="Compile linearization results")
+@click.option("--kofamscan", is_flag=True, default=None, help="Compile kofamscan results")
+@click.option("--barrnap", is_flag=True, default=None, help="Compile barrnap results")
 # fmt: on
-def compile(indir, outdir, coords, checkm2, linearization):
+def compile(indir, outdir, coords, checkm2, linearization, kofamscan, barrnap):
     compile_results(
         indir,
         outdir,
         checkm2=checkm2,
         linearization=linearization,
+        kofamscan=kofamscan,
+        barrnap=barrnap,
         coords=coords,
     )
 
@@ -86,12 +89,33 @@ def linearize(metadata, outdir, gap, filt):
     linearization_batch(metadata, outdir, gap, filt)
 
 
-# look at distribution of contamination v.s. completion
-# filter genomes
+# fmt: off
+@wipe.command()
+@click.option('--metadata', required=True, type=click.Path(exists=True),
+              help="Path to the metadata file (e.g., metadata_fqc.tsv).")
+@click.option("-o", "--outdir", required=True,
+              help="Directory storing compiled annotation_summary.txt.")
+@click.option('--rrna-cutoff', type=float, default=0.67,
+              help="rRNA cutoff value.")
+@click.option('--ko-profiles', required=True, type=click.Path(exists=True),
+              help="Path to KO profiles file.")
+@click.option('--ko-list', required=True, type=click.Path(exists=True),
+              help="Path to KO list file.")
+@click.option('--tmp-dir', required=True, type=click.Path(),
+              help="Temporary directory for intermediate files.")
+@click.option('--nthreads', required=True, type=int,
+              help="Number of threads to use.")
+# fmt: on
+def annotate(
+    metadata, outdir, rrna_cutoff, ko_profiles, ko_list, tmp_dir, nthreads
+):
+    """
+    Annotates genomes based on provided metadata and KO profiles.
+    """
+    annotate_multiple(
+        metadata, outdir, rrna_cutoff, ko_profiles, ko_list, tmp_dir, nthreads
+    )
 
-# annotate 16s
-
-# annotate marker genes
 
 # protocol selection
 # - completion
@@ -126,34 +150,6 @@ def annotate_16s(metadata, outdir):
 
 # fmt: off
 @wipe.command()
-@click.option('--metadata', required=True, type=click.Path(exists=True),
-              help="Path to the metadata file (e.g., metadata_fqc.tsv).")
-@click.option('--lin-dir', required=True, type=click.Path(exists=True),
-              help="Directory containing linearized genomes.")
-@click.option('--rrna-cutoff', type=float, default=0.67,
-              help="rRNA cutoff value.")
-@click.option('--ko-profiles', required=True, type=click.Path(exists=True),
-              help="Path to KO profiles file.")
-@click.option('--ko-list', required=True, type=click.Path(exists=True),
-              help="Path to KO list file.")
-@click.option('--tmp-dir', required=True, type=click.Path(),
-              help="Temporary directory for intermediate files.")
-@click.option('--nthreads', required=True, type=int,
-              help="Number of threads to use.")
-# fmt: on
-def annotate(
-    metadata, lin_dir, rrna_cutoff, ko_profiles, ko_list, tmp_dir, nthreads
-):
-    """
-    Annotates genomes based on provided metadata and KO profiles.
-    """
-    annotate_multiple(
-        metadata, lin_dir, rrna_cutoff, ko_profiles, ko_list, tmp_dir, nthreads
-    )
-
-
-# fmt: off
-@wipe.command()
 @click.option("-i", "--indir", required=True, type=click.Path(exists=True),
               help="Input directory containing all genome files.")
 @click.option("-e", "--ext", required=True,
@@ -171,19 +167,6 @@ def metadata(indir, ext, outdir, start_gid):
         index=False,
         header=False,
     )
-
-
-# # fmt: off
-# @wipe.command()
-# @click.option("-i", "--indir", required=True, type=click.Path(exists=True),
-#               help="Input directory containing all genome files.")
-# @click.option("-log", "--log_dir", required=True,
-#               help="E.g. ./tests/data/out.")
-# @click.option("-tmp", "--tmp_dir", required=True,
-#               help="Tmp dir storing decompressed genome data.")
-# # fmt: on
-# def annotate(indir, log_dir, tmp_dir):
-#     run_prodigal_batch(indir, log_dir, tmp_dir)
 
 
 @wipe.group()
