@@ -23,6 +23,8 @@ from wipe.modules.utils import (
     gen_summary_data,
     gen_output_paths,
     infer_gid_ncbi,
+    check_required_cols,
+    create_new_genomes_dir,
 )
 
 
@@ -304,6 +306,55 @@ class UtilsTests(unittest.TestCase):
             str(context.exception),
             "No valid genome ID provided or extracted: /path/to/GCF_0009819.1ASM98195v1_genomic.fasta.xz",
         )
+
+    def test_check_required_cols(self):
+        df = pd.read_csv("./tests/data/assembly.tsv", sep="\t")
+        check_required_cols(df, ["genome_id", "assembly_accession"])
+
+    def test_check_required_cols(self):
+        df = pd.read_csv("./tests/data/assembly.tsv", sep="\t")
+        with self.assertRaisesRegex(
+            ValueError, "Missing required columns: {'non_existent_col_1'}"
+        ):
+            check_required_cols(
+                df, ["assembly_accession", "non_existent_col_1"]
+            )
+
+    def test_create_new_genomes_dir(self):
+        # Create temporary source files and destination directory
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as dest_dir:
+            # Create mock genome files in the source directory
+            genome_files = []
+            for i in range(3):
+                temp_file = os.path.join(source_dir, f"genome_{i}.fna")
+                with open(temp_file, "w") as f:
+                    f.write(f"Mock genome data {i}")
+                genome_files.append(temp_file)
+
+            # Assert destination directory is initially empty
+            self.assertEqual(len(os.listdir(dest_dir)), 0)
+
+            # Call the function to copy files
+            create_new_genomes_dir(genome_files, dest_dir)
+
+            # Check if files are correctly copied
+            dest_files = os.listdir(dest_dir)
+            self.assertEqual(len(dest_files), len(genome_files))
+            for file in genome_files:
+                self.assertTrue(
+                    os.path.exists(
+                        os.path.join(dest_dir, os.path.basename(file))
+                    )
+                )
+
+            # Verify file content
+            for file in genome_files:
+                dest_file_path = os.path.join(dest_dir, os.path.basename(file))
+                with open(dest_file_path, "r") as f:
+                    self.assertEqual(
+                        f.read(),
+                        f"Mock genome data {genome_files.index(file)}",
+                    )
 
 
 if __name__ == "__main__":

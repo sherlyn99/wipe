@@ -1,2 +1,3 @@
+genome_path	genome_id
 ./tests/data/GCF_000981955.1_ASM98195v1_genomic2	G000000001
 ./tests/data/GCF_000981955.1_ASM98195v1_genomic	G000000001

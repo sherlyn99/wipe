@@ -8,21 +8,24 @@ from wipe.modules.utils import search_dirs
 
 
 def compile_results_linearization(indir):
+    dirs = search_dirs(indir)
     data = []
-    files = search_dirs(indir, "linearization_*")
+    dfs = []
 
-    for file in files:
-        with gzip.open(file, "rt") as f:
-            stats = json.load(f)
-            data.append(stats[0])
+    for dir in dirs:
+        quality_report_path = os.path.join(dir, "linearization.tsv")
+        if os.path.exists(quality_report_path):
+            df = pd.read_csv(quality_report_path, sep="\t")
+            dfs.append(df)
 
-    df = pd.DataFrame(data)
-    return df
+    combined_df = pd.concat(dfs, ignore_index=True)
+    return combined_df
 
 
 def compile_results_checkm2(indir):
-    dirs = search_dirs(indir, "checkm2_out*")
+    dirs = search_dirs(indir)
     dfs = []
+    genome_ids = []
 
     for dir in dirs:
         quality_report_path = os.path.join(dir, "quality_report.tsv")
@@ -30,8 +33,58 @@ def compile_results_checkm2(indir):
             df = pd.read_csv(quality_report_path, sep="\t")
             dfs.append(df)
 
+            gid = "".join(dir.split("/")[-6:-2])
+            genome_ids.append(gid)
+
     combined_df = pd.concat(dfs, ignore_index=True)
-    combined_df = combined_df.rename(columns={"Name": "genome_id"})
+    combined_df.insert(0, "genome_id", genome_ids)
+    return combined_df
+
+
+def compile_results_kofamscan(indir):
+    dirs = search_dirs(indir, "kofamscan_out")
+    dfs = []
+
+    for dir in dirs: 
+        quality_report_path = search_dirs(dir, "*marker_gene_ct.tsv.xz")[0]
+        if os.path.exists(quality_report_path):
+            df = pd.read_csv(
+                quality_report_path, sep="\t", compression="xz"
+            )
+        else:
+            gid = "".join(dir.split("/")[-5:-1])
+            df = pd.DataFrame({"genome_id": gid, "marker_gene_ct": 0})
+        dfs.append(df)
+
+    combined_df = pd.concat(dfs, ignore_index=True)
+    return combined_df
+
+
+def compile_results_barrnap(indir):
+    dirs = search_dirs(indir, "barrnap_out")
+    dfs = []
+    gids = []
+
+    for dir in dirs:
+        quality_report_path = search_dirs(dir, "*barrnap.tsv.xz")[0]
+        if os.path.exists(quality_report_path):
+            df_tmp = pd.read_csv(
+                quality_report_path, sep="\t", compression="xz"
+            )
+            counts = df_tmp["rrna_name"].value_counts()
+            desired_order = ["5S_rRNA", "16S_rRNA", "23S_rRNA"]
+            counts = counts.reindex(desired_order).fillna(0)
+            df = pd.DataFrame(counts, dtype=int).T.reset_index(drop=True)
+            df.columns.name = None
+        else:
+            columns = ["5S_rRNA", "16S_rRNA", "23S_rRNA"]
+            df = pd.DataFrame([[0] * len(columns)], columns=columns, dtype=int)
+
+        dfs.append(df)
+        gid = "".join(dir.split("/")[-5:-1])
+        gids.append(gid)
+    combined_df = pd.concat(dfs, ignore_index=True)
+    combined_df.insert(0, "genome_id", gids)
     return combined_df
 
 
@@ -79,19 +132,48 @@ def concatenate_xz_files(file_list, output_file):
                 out_file.write(f.read())
 
 
-def collect_results(indir, outdir, coords=False):
+def compile_results(
+    indir,
+    outdir,
+    checkm2=None,
+    linearization=None,
+    kofamscan=None,
+    proteins=None,
+    barrnap=None,
+    coords=False,
+):
     outpath_res = os.path.join(outdir, "metadata_stats.tsv")
-    outpath_coords = os.path.join(outdir, "coords.txt.xz")
+    if checkm2:
+        df_checkm2 = compile_results_checkm2(indir)
+        out_file = os.path.join(outdir, "results_checkm2.tsv")
+        df_checkm2.to_csv(out_file, index=False, header=True, sep="\t")
 
-    df_lin = compile_results_linearization(indir)
-    df_qc = compile_results_checkm2(indir)
-    df_proteins = compile_results_prodigal(indir)
+    if linearization:
+        df_lin = compile_results_linearization(indir)
+        out_file = os.path.join(outdir, "results_linearization.tsv")
+        df_lin.to_csv(out_file, index=False, header=True, sep="\t")
 
-    df = pd.merge(df_lin, df_qc, how="left", on="genome_id").merge(
-        df_proteins, how="left", on="genome_id"
-    )
+    if kofamscan:
+        df_kofamscan = compile_results_kofamscan(indir)
+        out_file = os.path.join(outdir, "results_kofamscan.tsv")
+        df_kofamscan.to_csv(out_file, index=False, header=True, sep="\t")
 
-    df.to_csv(outpath_res, index=False, header=True, sep="\t")
+    if barrnap:
+        df_barrnap = compile_results_barrnap(indir)
+        out_file = os.path.join(outdir, "results_barrnap.tsv")
+        df_barrnap.to_csv(out_file, index=False, header=True, sep="\t")
 
-    if coords:
-        generate_coords(indir, outpath_coords)
+    if proteins:
+        df_proteins = compile_results_prodigal(indir)
+        out_file = os.path.join(outdir, "results_proteins.tsv")
+        df_proteins.to_csv(out_file, index=False, header=True, sep="\t")
+
+        if coords:
+            outpath_coords = os.path.join(outdir, "coords.txt.xz")
+            generate_coords(indir, outpath_coords)
+
+    # df = pd.merge(df_lin, df_qc, how="left", on="genome_id").merge(
+    #     df_proteins, how="left", on="genome_id"
+    # )
+
+    # df.to_csv(outpath_res, index=False, header=True, sep="\t")

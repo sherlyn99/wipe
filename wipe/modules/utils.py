@@ -29,14 +29,23 @@ def read(fname):
 def load_md(md_path):
     md_df = pd.read_csv(md_path, sep="\t", header=None, low_memory=False)
     if md_df.shape[1] == 2:
-        md_df.columns = ["filepath", "genome_id"]
+        md_df.columns = ["local_path", "genome_id"]
     elif md_df.shape[1] == 1:
-        md_df.columns = ["filepath"]
+        md_df.columns = ["local_path"]
     else:
         raise ValueError(
             f"Unexpected number of columns in metadata {md_path}. Expected 1 or 2 columns."
         )
     return md_df
+
+
+def load_metadata(inpath):
+    md_df = pd.read_csv(inpath, sep="\t", low_memory=False)
+    return md_df
+
+
+def create_outdir(outdir_path):
+    Path(outdir_path).mkdir(parents=True, exist_ok=True)
 
 
 def check_duplicated_genome_ids(md_df):
@@ -136,19 +145,23 @@ def get_files_all_fa(indir):
     return filelist
 
 
-def search_dirs(start_dir, basename_pattern):
+def search_dirs(start_dir, basename_pattern=None):
     """Does recursive search for directory/file.
     Example
     -------
     search_dirs("./tests/data/, "checkm2_out*)
     """
-    dir_pattern = os.path.join(start_dir, "**", basename_pattern)
+    if not basename_pattern:
+        dir_pattern = os.path.join(start_dir, "**")
+    else:
+        dir_pattern = os.path.join(start_dir, "**", basename_pattern)
     dirs = glob(dir_pattern, recursive=True)
     return dirs
 
 
-def gen_output_paths(process, inpath, outdir):
-    gid = os.path.basename(inpath).split(".")[0]
+def gen_output_paths(process, inpath, outdir, gid=None):
+    if not gid:
+        gid = os.path.basename(inpath).split(".")[0]
 
     outdir_path = os.path.join(outdir, f"{process}_out_{gid}")
     stats_path = os.path.join(outdir, f"{process}_stats_{gid}.json.gz")
@@ -159,8 +172,9 @@ def gen_path(pdir, filename):
     return os.path.join(pdir, filename)
 
 
-def gen_stats_data(process, inpath):
-    gid = os.path.basename(inpath).split(".")[0]
+def gen_stats_data(process, inpath, gid=None):
+    if not gid:
+        gid = os.path.basename(inpath).split(".")[0]
 
     stats_data = {
         "genome_id": gid,
@@ -216,6 +230,88 @@ def load_assembly(inpath):
         df_assembly["assembly_accession"].apply(infer_gid_ncbi),
     )
     return df_assembly
+
+
+def load_assembly_add_gpath(inpath):
+    df_assembly = load_assembly(inpath)
+
+
+def check_required_cols(df, required_cols):
+    required_cols = set(required_cols)
+    if not required_cols.issubset(df.columns):
+        raise ValueError(
+            f"Missing required columns: {required_cols - set(df.columns)}"
+        )
+
+
+def create_new_genomes_dir(glist, dir):
+    """Move all new genomes into a directory"""
+    for file in glist:
+        shutil.copy(file, dir)
+
+
+import subprocess
+
+
+def run_command(commands, cwd=None, use_shell=False, logfile=None):
+    """
+    Run a shell command with detailed error handling. If a logfile is provided,
+    the output will be written to the logfile, otherwise, it will be printed.
+
+    Args:
+        commands (list): The command and its arguments to run.
+        cwd (str, optional): Directory to execute the command in.
+        logfile (str, optional): Path to the logfile to write output to.
+
+    Returns:
+        subprocess.CompletedProcess: The result of the executed command.
+
+    Raises:
+        subprocess.CalledProcessError: If the command returns a non-zero exit code.
+        Exception: For any other unexpected errors.
+    """
+
+    # Function to log or print the message
+    def log_message(message):
+        if logfile:
+            with open(logfile, "a") as log:
+                log.write(message + "\n")
+        else:
+            print(message)
+
+    try:
+        result = subprocess.run(
+            commands,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=True,
+            shell=use_shell,
+        )
+
+        # Log or print the standard output
+        log_message(f"Standard output:\n{result.stdout}\n")
+        log_message(f"Standard error:\n{result.stderr}\n")
+
+        return result
+
+    except subprocess.CalledProcessError as e:
+        # Handle and log the error if the subprocess fails
+        log_message(
+            f"Subprocess error:\nCommand failed with exit code {e.returncode}\n"
+        )
+        if use_shell:
+            log_message(f"Command:\n{commands}\n")
+        else:
+            log_message(f"Command:\n{' '.join(e.cmd)}\n")
+        log_message(f"Standard output:\n{e.stdout}\n")
+        log_message(f"Standard error:\n{e.stderr}\n")
+        raise
+
+    except Exception as e:
+        # Handle and log unexpected errors
+        log_message(f"Unexpected error: {type(e).__name__}: {e}")
+        raise
 
 
 # def setup_logger_with_stream(output_dir):
