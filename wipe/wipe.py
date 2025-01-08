@@ -334,5 +334,41 @@ def extract_names(map_file, uniref90_names, uniref50_names, output_names):
         raise
 
 
+@uniref.command()
+@click.option("--level", type=click.Choice(['50', '90']), required=True,
+              help="UniRef database level to download (50 or 90)")
+@click.option("-o", "--outdir", required=True,
+              help="Output directory for downloaded files")
+def download(level, outdir):
+    """
+    Download UniRef database files from UniProt FTP server.
+    
+    Downloads all files for either UniRef50 or UniRef90 from the UniProt FTP server.
+    Uses wget to mirror the relevant directory while preserving the file structure.
+    """
+    try:
+        os.makedirs(outdir, exist_ok=True)
+        
+        base_url = f"ftp://ftp.uniprot.org/pub/databases/uniprot/current_release/uniref/uniref{level}/"
+        wget_cmd = [
+            "wget",
+            "-r",  # recursive download
+            "-np",  # no parent directories
+            "-nH",  # no host directories
+            "--cut-dirs=6",  # remove 6 levels of directories
+            "-R", "index.html*",  # exclude index.html files
+            "-P", outdir,  # output directory
+            base_url
+        ]
+        
+        click.echo(f"Downloading UniRef{level} database files...")
+        run_command(wget_cmd)
+        click.echo(f"UniRef{level} download complete")
+        
+    except Exception as e:
+        click.echo(f"Error downloading UniRef{level}: {str(e)}", err=True)
+        raise
+
+
 if __name__ == "__main__":
     wipe()
