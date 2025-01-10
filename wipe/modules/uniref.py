@@ -1,5 +1,6 @@
 import re
 import os
+import gzip
 import lzma
 from pathlib import Path
 
@@ -11,45 +12,58 @@ def process_uniref_xml(xml_file, output_tsv):
         xml_file (str): Path to input XML file (can be gzipped)
         output_tsv (str): Path to output TSV file
     """
-    # Regex patterns
+    # Regex patterns - exactly matching original script
     pentr = re.compile(r'^<entry id="UniRef\d+_(.+)" updated=".+">$')
-    pname = re.compile(r'^<n>Cluster: (.+)<n>$')
+    pname = re.compile(r'^<name>Cluster: (.+)</name>$')
     pprop = re.compile(r'^<property type="(.+)" value="(.+)"/>$')
     
-    with open(output_tsv, 'w') as out_f:
-        with open(xml_file, 'r') as f:
-            for line in f:
-                # Only read main entries, not members
-                if not line.startswith('<entry id='):
-                    continue
-                line = line.rstrip('\r\n')
-                
-                # UniRef identifier
-                m = pentr.search(line)
-                if not m:
-                    raise ValueError(f'Invalid entry line: {line}')
-                head = [m.group(1)]
-                
-                # Cluster name
+    with gzip.open(xml_file, 'rt') as f, open(output_tsv, 'w') as out_f:
+        for line in f:
+            # Only read main entries, not members
+            if not line.startswith('<entry id='):
+                continue
+            line = line.rstrip('\r\n')
+            
+            # UniRef identifier
+            m = pentr.search(line)
+            if not m:
+                raise ValueError('Invalid entry line: %s' % line)
+            head = [m.group(1)]
+            
+            # Cluster name
+            line = next(f).rstrip('\r\n')
+            m = pname.search(line)
+            if not m:
+                raise ValueError('Missing cluster name for %s' % head[0])
+            head.append(m.group(1))
+            
+            # Common properties
+            for prop in ('member count', 'common taxon', 'common taxon ID'):
                 line = next(f).rstrip('\r\n')
-                m = pname.search(line)
+                m = pprop.search(line)
+                if not m or m.group(1) != prop:
+                    raise ValueError('Missing %s for %s' % (prop, head[0]))
+                head.append(m.group(2))
+                if prop == 'common taxon' and m.group(2) == 'unknown':
+                    head.append('0')
+                    break
+            
+            # Print header: UniProt, name, members, organism, taxId
+            out_f.write('\t'.join(head) + '\n')
+            
+            # Additional properties
+            adds = {}
+            line = next(f).rstrip('\r\n')
+            while True:
+                m = pprop.search(line)
                 if not m:
-                    raise ValueError(f'Missing cluster name for {head[0]}')
-                head.append(m.group(1))
-                
-                # Common properties
-                for prop in ('member count', 'common taxon', 'common taxon ID'):
-                    line = next(f).rstrip('\r\n')
-                    m = pprop.search(line)
-                    if not m or m.group(1) != prop:
-                        raise ValueError(f'Missing {prop} for {head[0]}')
-                    head.append(m.group(2))
-                    if prop == 'common taxon' and m.group(2) == 'unknown':
-                        head.append('0')
-                        break
-                
-                # Write header: UniProt, name, members, organism, taxId
-                out_f.write('\t'.join(head) + '\n')
+                    break
+                adds.setdefault(m.group(1), []).append(m.group(2))
+                line = next(f).rstrip('\r\n')
+            
+            # Print additions: property, values
+            for prop, vals in sorted(adds.items()):
+                out_f.write('# %s\t%s\n' % (prop, '\t'.join(sorted(vals))))
 
 def merge_uniref_maps(uniref90_map, uniref50_map, output_file, simplify=False):
     """
