@@ -96,7 +96,7 @@ def run_checkm2_batch(metadata, outdir, dbpath, threads):
         gid = row.genome_id
         infile_path = row.genome_path
         outdir_path = os.path.join(
-            outdir, gid[0], gid[1:4], gid[4:7], gid[7:10]
+            outdir, gid[0], gid[1:4], gid[4:7], gid[7:10], "checkm2_out"
         )
         logfile_path = os.path.join(outdir_path, f"{gid}_run_checkm2.log")
         try:

@@ -9,16 +9,17 @@ from wipe.modules.utils import search_dirs
 
 def compile_results_linearization(indir):
     dirs = search_dirs(indir)
-    data = []
     dfs = []
 
     for dir in dirs:
         quality_report_path = os.path.join(dir, "linearization.tsv")
-        if os.path.exists(quality_report_path):
+        if os.path.exists(quality_report_path) and os.stat(quality_report_path).st_size != 0:
             df = pd.read_csv(quality_report_path, sep="\t")
             dfs.append(df)
-
-    combined_df = pd.concat(dfs, ignore_index=True)
+    if dfs:
+        combined_df = pd.concat(dfs, ignore_index=True)
+    else:
+        combined_df = pd.DataFrame()
     return combined_df
 
 
@@ -31,9 +32,25 @@ def compile_results_checkm2(indir):
         quality_report_path = os.path.join(dir, "quality_report.tsv")
         if os.path.exists(quality_report_path):
             df = pd.read_csv(quality_report_path, sep="\t")
+            df["assembly_accession"] = df["Name"].apply(
+                lambda x: "_".join(x.split("_")[:2])
+            )
+            df = df.rename(
+                columns={
+                    "Completeness": "checkm2-completeness",
+                    "Contamination": "checkm2-contamination",
+                }
+            )
+            df = df[
+                [
+                    # "assembly_accession",
+                    "checkm2-completeness",
+                    "checkm2-contamination",
+                ]
+            ]
             dfs.append(df)
 
-            gid = "".join(dir.split("/")[-6:-2])
+            gid = "".join(dir.split("/")[-5:-1])
             genome_ids.append(gid)
 
     combined_df = pd.concat(dfs, ignore_index=True)
@@ -45,12 +62,10 @@ def compile_results_kofamscan(indir):
     dirs = search_dirs(indir, "kofamscan_out")
     dfs = []
 
-    for dir in dirs: 
+    for dir in dirs:
         quality_report_path = search_dirs(dir, "*marker_gene_ct.tsv.xz")[0]
         if os.path.exists(quality_report_path):
-            df = pd.read_csv(
-                quality_report_path, sep="\t", compression="xz"
-            )
+            df = pd.read_csv(quality_report_path, sep="\t", compression="xz")
         else:
             gid = "".join(dir.split("/")[-5:-1])
             df = pd.DataFrame({"genome_id": gid, "marker_gene_ct": 0})
