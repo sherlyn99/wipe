@@ -163,8 +163,10 @@ def gen_output_paths(process, inpath, outdir, gid=None):
     if not gid:
         gid = os.path.basename(inpath).split(".")[0]
 
-    outdir_path = os.path.join(outdir, f"{process}_out_{gid}")
-    stats_path = os.path.join(outdir, f"{process}_stats_{gid}.json.gz")
+    outdir_path = os.path.join(outdir, f"{process}_out")
+    stats_path = os.path.join(
+        outdir, f"{process}_out", f"{process}_log.json.gz"
+    )
     return outdir_path, stats_path, gid
 
 

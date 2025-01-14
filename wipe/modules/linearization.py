@@ -66,7 +66,9 @@ def linearization_single(infile_path, gid, outdir_path, gap, filt=None):
     "N*20")
     """
     outfile_path = os.path.join(outdir_path, f"{gid}.fna.gz")
-    linearization_result_path = os.path.join(outdir_path, "linearization.tsv")
+    linearization_result_path = os.path.join(
+        outdir_path, "linearization_out", "linearization.tsv"
+    )
 
     if not os.path.exists(infile_path):
         raise FileNotFoundError(f"Input file {infile_path} does not exist.")
@@ -75,7 +77,7 @@ def linearization_single(infile_path, gid, outdir_path, gap, filt=None):
     if check_outputs([outfile_path, linearization_result_path]):
         return
 
-    create_outdir(outdir_path)
+    create_outdir(os.path.join(outdir_path, "linearization_out"))
     linearized = read_fasta(infile_path)
     n_written, n_char, n_filtered = 0, 0, 0
 

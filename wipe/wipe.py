@@ -1,12 +1,13 @@
 import os
 import click
+import pandas as pd
 from os.path import join
 from wipe.modules.constants import MSG_WELCOME
 from wipe.modules.checkm2 import run_checkm2_batch
 from wipe.modules.collection import compile_results
 from wipe.modules.linearization import linearization_batch
 
-from wipe.modules.metadata import generate_metadata
+from wipe.modules.metadata import process_metadata, merge_qc
 from wipe.modules.gsearch import create_db, update_db
 from wipe.modules.annotate import annotate_multiple
 from wipe.modules.barrnap import run_barrnap_single
@@ -14,6 +15,7 @@ from wipe.modules.recover_16s import extract_16s_from_tlp
 from wipe.modules.utils import load_metadata, run_command
 from wipe.modules.functiondb import run_functional_annotation
 from wipe.modules.uniref import process_uniref_xml, merge_uniref_maps, extract_uniref_names
+from wipe.modules.bindash import bindash2_gen_dm
 
 
 # takes in a directory of genomes
@@ -31,6 +33,75 @@ from wipe.modules.uniref import process_uniref_xml, merge_uniref_maps, extract_u
 @click.group(help=MSG_WELCOME)
 def wipe():
     pass
+
+
+# fmt: off
+@wipe.command()
+@click.option("-m", "--metadata", 
+              type=click.Path(exists=True), required=True,
+              help="Path to metadata file containing genome information.")
+@click.option("-o", "--outdir", required=True, help="Output directory for storing results.")
+@click.option("--checkm")
+@click.option("--ani")
+@click.option("--fcs-gbk")
+@click.option("--fcs-rfs")
+@click.option("--checkm2")
+@click.option("--linearization")
+@click.option("--kofamscan")
+@click.option("--barrnap")
+
+
+# fmt: on
+def metadata(
+    metadata,
+    outdir,
+    checkm,
+    ani,
+    fcs_gbk,
+    fcs_rfs,
+    checkm2,
+    linearization,
+    kofamscan,
+    barrnap,
+):
+    """
+    Check genome path and add citation count and taxonomy to the metadata file.
+    """
+    if kofamscan and barrnap:
+        df_md = pd.read_csv(metadata, sep="\t", low_memory=False)
+        df_kofamscan = pd.read_csv(kofamscan, sep="\t", low_memory=False)
+        df_barrnap = pd.read_csv(barrnap, sep="\t", low_memory=False)
+        df_tmp = pd.merge(df_md, df_kofamscan, on="genome_id", how="left")
+        df_tmp = pd.merge(df_tmp, df_barrnap, on="genome_id", how="left")
+        df_tmp.to_csv(
+            os.path.join(outdir, "metadata_final.tsv"),
+            sep="\t",
+            header=True,
+            index=False,
+        )
+        return
+    if linearization:
+        df_md = pd.read_csv(metadata, sep="\t", low_memory=False)
+        df_lin = pd.read_csv(linearization, sep="\t", low_memory=False)
+        df_combined = pd.merge(df_md, df_lin, on="genome_id", how="left")
+        df_combined.to_csv(
+            os.path.join(outdir, "metadata_linearization.tsv"),
+            sep="\t",
+            header=True,
+            index=False,
+        )
+        return
+    if checkm and ani and fcs_gbk and fcs_rfs and checkm2:
+        md = merge_qc(metadata, checkm, ani, fcs_gbk, fcs_rfs, checkm2)
+        md.to_csv(
+            os.path.join(outdir, "metadata_qc.tsv"),
+            sep="\t",
+            index=False,
+            header=True,
+        )
+        return
+    # Check genome path and add citation count and taxonomy to the metadata file.
+    process_metadata(metadata, outdir)
 
 
 # fmt: off
@@ -119,6 +190,22 @@ def annotate(
     )
 
 
+# fmt: off
+@wipe.command()
+@click.option("-i", "--indir", required=True,
+              help="Directory storing input fa(.gz) files.")
+@click.option("-o", "--outdir", required=True,
+              help="Directory storing compiled annotation_summary.txt.")
+@click.option('--nthreads', required=True, type=int,
+              help="Number of threads to use.")
+# fmt: on
+def gen_dm(indir, outdir, nthreads):
+    """
+    Run bindash2 and geneate distance matrix.
+    """
+    bindash2_gen_dm(indir, outdir, nthreads)
+
+
 # protocol selection
 # - completion
 # - contamination
@@ -129,46 +216,6 @@ def annotate(
 # - marker gene extraction
 # - multiple sequence alignment
 # - build tree
-
-
-### old code
-
-
-@wipe.command()
-@click.option("--metadata", type=click.Path(exists=True), required=True)
-@click.option("--outdir", required=True)
-def annotate_16s(metadata, outdir):
-    df_md = load_metadata(metadata)
-    infile = df_md["lin_path"]  # this needs to be verified
-    name = "_".join(
-        df_md["organism_name"].str.split(" ").str[:2]
-    )  # this needs to be tested
-    if metadata:
-        out_file_tsv = run_barrnap_single(infile, outdir)
-
-        if out_file_tsv and os.path.getsize(out_file_tsv) == 0:
-            extract_16s_from_tlp(out_file_tsv, name, outdir)
-
-
-# fmt: off
-@wipe.command()
-@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
-              help="Input directory containing all genome files.")
-@click.option("-e", "--ext", required=True,
-              help="Filename extension. e.g. 'fna' or '.fna'.")
-@click.option("-o", "--outdir", required=True,
-              help="Output directory for metadata.")
-@click.option("-s", "--start-gid", required=False,
-              help="Start genome gids, if they need to be specified.")
-# fmt: on
-def metadata(indir, ext, outdir, start_gid):
-    md_df = generate_metadata(indir, ext, start_gid)
-    md_df.to_csv(
-        join(outdir, "metadata.tsv"),
-        sep="\t",
-        index=False,
-        header=False,
-    )
 
 
 @wipe.group()
