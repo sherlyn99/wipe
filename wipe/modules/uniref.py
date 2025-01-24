@@ -27,7 +27,7 @@ def process_uniref_xml(xml_file, output_tsv):
             # UniRef identifier
             m = pentr.search(line)
             if not m:
-                raise ValueError('Invalid entry line: %s' % line)
+                raise ValueError(f'Invalid entry line: {line}')
             head = [m.group(1)]
             
             # Cluster name

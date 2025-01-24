@@ -324,13 +324,13 @@ def build(input_fasta, output_db, threads):
         os.makedirs(os.path.dirname(output_db), exist_ok=True)
         diamond_cmd = [
             "diamond", "makedb",
-            "--threads", str(threads),
             "--in", input_fasta,
-            "--db", output_db
+            "--db", output_db,
+            "--threads", str(threads)
         ]
         run_command(diamond_cmd)
     except Exception as e:
-        click.echo(f"Error creating DIAMOND database: {str(e)}", err=True)
+        click.echo(f"Error building DIAMOND database: {str(e)}", err=True)
         raise
 
 
