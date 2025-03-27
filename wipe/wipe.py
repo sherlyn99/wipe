@@ -12,7 +12,9 @@ from wipe.modules.gsearch import create_db, update_db
 from wipe.modules.annotate import annotate_multiple, annotate_single_kofamscan
 from wipe.modules.barrnap import run_barrnap_single
 from wipe.modules.recover_16s import extract_16s_from_tlp
-from wipe.modules.utils import load_metadata, check_required_cols
+from wipe.modules.utils import load_metadata, run_command, check_required_cols
+from wipe.modules.functiondb import run_functional_annotation
+from wipe.modules.uniref import process_uniref_xml, merge_uniref_maps, extract_uniref_names
 from wipe.modules.bindash import bindash2_gen_dm
 
 
@@ -285,6 +287,33 @@ def create(indir, outdir, nthreads):
 
 
 # fmt: off
+@wipe.command()
+@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
+              help="Input directory containing protein files")
+@click.option("-db", "--diamonddb", required=True, type=click.Path(exists=True),
+              help="Path to DIAMOND database")
+@click.option("-o", "--outdir", required=True,
+              help="Output directory for functional annotation results")
+@click.option("-t", "--threads", default=4,
+              help="Number of threads to use (default: 4)")
+# fmt: on
+def functiondb(indir, diamonddb, outdir, threads):
+    """
+    Run functional annotation pipeline using DIAMOND and UniRef database.
+    
+    This command expects:
+    1. Input directory with protein files (all.faa)
+    2. Pre-built DIAMOND database
+    3. Output directory for results
+    
+    Produces:
+    - uniref.map.xz: Mapping between query proteins and UniRef hits
+    - diamond_results.m8: Raw DIAMOND output
+    """
+    run_functional_annotation(indir, diamonddb, outdir, threads)
+
+
+# fmt: off
 @gsearch.command()
 @click.option("-i", "--indir", required=True, type=click.Path(exists=True),
               help="Input directory containing new fasta or fna.gz files.")
@@ -297,6 +326,131 @@ def create(indir, outdir, nthreads):
 # fmt: on
 def update(indir, db, outdir, nthreads, backup_dir):
     update_db(db, indir, nthreads=nthreads, backup_dir=backup_dir)
+
+
+@wipe.group()
+def uniref():
+    """Commands for working with UniRef databases and annotations."""
+    pass
+
+
+@uniref.command()
+@click.option("--level", type=click.Choice(['50', '90']), required=True,
+              help="UniRef database level to download (50 or 90)")
+@click.option("-o", "--outdir", required=True,
+              help="Output directory for downloaded files")
+def download(level, outdir):
+    """Download UniRef database files from UniProt FTP server."""
+    try:
+        os.makedirs(outdir, exist_ok=True)
+        
+        base_url = f"ftp://ftp.uniprot.org/pub/databases/uniprot/current_release/uniref/uniref{level}/"
+        wget_cmd = [
+            "wget", "-r", "-np", "-nH",
+            "--cut-dirs=6",
+            "-R", "index.html*",
+            "-P", outdir,
+            base_url
+        ]
+        
+        click.echo(f"Downloading UniRef{level} database files...")
+        run_command(wget_cmd)
+        click.echo(f"UniRef{level} download complete")
+        
+    except Exception as e:
+        click.echo(f"Error downloading UniRef{level}: {str(e)}", err=True)
+        raise
+
+
+@uniref.command()
+@click.option("-i", "--input-fasta", required=True, type=click.Path(exists=True),
+              help="Input FASTA file (UniRef50 or UniRef90)")
+@click.option("-o", "--output-db", required=True,
+              help="Output DIAMOND database path")
+@click.option("-t", "--threads", default=4,
+              help="Number of threads to use (default: 4)")
+def build(input_fasta, output_db, threads):
+    """Create a DIAMOND database from a UniRef FASTA file."""
+    try:
+        os.makedirs(os.path.dirname(output_db), exist_ok=True)
+        diamond_cmd = [
+            "diamond", "makedb",
+            "--in", input_fasta,
+            "--db", output_db,
+            "--threads", str(threads)
+        ]
+        run_command(diamond_cmd)
+    except Exception as e:
+        click.echo(f"Error building DIAMOND database: {str(e)}", err=True)
+        raise
+
+
+@uniref.command()
+@click.option("-i", "--xml-file", required=True, type=click.Path(exists=True),
+              help="Input UniRef XML file (can be gzipped)")
+@click.option("-o", "--output-tsv", required=True,
+              help="Output TSV file path")
+def process(xml_file, output_tsv):
+    """Process UniRef XML file to extract relevant information."""
+    try:
+        process_uniref_xml(xml_file, output_tsv)
+    except Exception as e:
+        click.echo(f"Error processing UniRef XML: {str(e)}", err=True)
+        raise
+
+
+@uniref.command()
+@click.option("-i", "--indir", required=True, type=click.Path(exists=True),
+              help="Input directory containing protein files (all.faa)")
+@click.option("-db", "--diamonddb", required=True, type=click.Path(exists=True),
+              help="Path to DIAMOND database")
+@click.option("-o", "--outdir", required=True,
+              help="Output directory for DIAMOND results")
+@click.option("-t", "--threads", default=4,
+              help="Number of threads to use (default: 4)")
+def blastp(indir, diamonddb, outdir, threads):
+    """Run DIAMOND BLASTP against UniRef database."""
+    try:
+        run_functional_annotation(indir, diamonddb, outdir, threads)
+    except Exception as e:
+        click.echo(f"Error running DIAMOND BLASTP: {str(e)}", err=True)
+        raise
+
+
+@uniref.command()
+@click.option("--uniref90-map", required=True, type=click.Path(exists=True),
+              help="Path to UniRef90 mapping file")
+@click.option("--uniref50-map", required=True, type=click.Path(exists=True),
+              help="Path to UniRef50 mapping file")
+@click.option("-o", "--output-file", required=True,
+              help="Output merged map file path")
+@click.option("--simplify", is_flag=True, default=False,
+              help="Simplify UniRef IDs by taking only part after '_'")
+def merge_maps(uniref90_map, uniref50_map, output_file, simplify):
+    """Merge UniRef90 and UniRef50 mapping files."""
+    try:
+        merge_uniref_maps(uniref90_map, uniref50_map, output_file, simplify)
+    except Exception as e:
+        click.echo(f"Error merging UniRef maps: {str(e)}", err=True)
+        raise
+
+
+@uniref.command()
+@click.option("--map-file", required=True, type=click.Path(exists=True),
+              help="Path to UniRef mapping file")
+@click.option("--uniref90-names", required=True, type=click.Path(exists=True),
+              help="Path to UniRef90 names TSV file")
+@click.option("--uniref50-names", required=True, type=click.Path(exists=True),
+              help="Path to UniRef50 names TSV file")
+@click.option("-o", "--output-names", required=True,
+              help="Output names file path")
+def extract_names(map_file, uniref90_names, uniref50_names, output_names):
+    """Extract UniRef names for the IDs in the mapping file."""
+    try:
+        extract_uniref_names(map_file, uniref90_names, uniref50_names, output_names)
+    except Exception as e:
+        click.echo(f"Error extracting UniRef names: {str(e)}", err=True)
+        raise
 
 
 if __name__ == "__main__":
