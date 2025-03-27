@@ -9,10 +9,10 @@ from wipe.modules.linearization import linearization_batch
 
 from wipe.modules.metadata import process_metadata, merge_qc
 from wipe.modules.gsearch import create_db, update_db
-from wipe.modules.annotate import annotate_multiple
+from wipe.modules.annotate import annotate_multiple, annotate_single_kofamscan
 from wipe.modules.barrnap import run_barrnap_single
 from wipe.modules.recover_16s import extract_16s_from_tlp
-from wipe.modules.utils import load_metadata, run_command
+from wipe.modules.utils import load_metadata, run_command, check_required_cols
 from wipe.modules.functiondb import run_functional_annotation
 from wipe.modules.uniref import process_uniref_xml, merge_uniref_maps, extract_uniref_names
 from wipe.modules.bindash import bindash2_gen_dm
@@ -49,8 +49,6 @@ def wipe():
 @click.option("--linearization")
 @click.option("--kofamscan")
 @click.option("--barrnap")
-
-
 # fmt: on
 def metadata(
     metadata,
@@ -134,8 +132,10 @@ def qc(metadata, outdir, dbpath, threads):
 @click.option("--linearization", is_flag=True, default=None, help="Compile linearization results")
 @click.option("--kofamscan", is_flag=True, default=None, help="Compile kofamscan results")
 @click.option("--barrnap", is_flag=True, default=None, help="Compile barrnap results")
+@click.option("--proteins", is_flag=True, default=None, help="Compile prodigal results")
 # fmt: on
-def compile(indir, outdir, coords, checkm2, linearization, kofamscan, barrnap):
+def compile(indir, outdir, coords, checkm2, linearization, kofamscan, barrnap, proteins):
+    print("hi world")
     compile_results(
         indir,
         outdir,
@@ -143,6 +143,7 @@ def compile(indir, outdir, coords, checkm2, linearization, kofamscan, barrnap):
         linearization=linearization,
         kofamscan=kofamscan,
         barrnap=barrnap,
+        proteins=proteins,
         coords=coords,
     )
 
@@ -188,6 +189,56 @@ def annotate(
     annotate_multiple(
         metadata, outdir, rrna_cutoff, ko_profiles, ko_list, tmp_dir, nthreads
     )
+
+
+# fmt: off
+@wipe.command()
+@click.option('--metadata', required=True, type=click.Path(exists=True),
+              help="Path to the metadata file (e.g., metadata_fqc.tsv).")
+@click.option("-o", "--outdir", required=True,
+              help="Directory storing compiled annotation_summary.txt.")
+@click.option('--ko-profiles', required=True, type=click.Path(exists=True),
+              help="Path to KO profiles file.")
+@click.option('--ko-list', required=True, type=click.Path(exists=True),
+              help="Path to KO list file.")
+@click.option('--tmp-dir', required=True, type=click.Path(),
+              help="Temporary directory for intermediate files.")
+@click.option('--nthreads', required=True, type=int,
+              help="Number of threads to use.")
+# fmt: on
+def annotate_ko(
+    metadata, outdir, ko_profiles, ko_list, tmp_dir, nthreads
+):
+    """
+    Annotates genomes based on provided metadata and KO profiles.
+    """
+    df_md = pd.read_csv(metadata, sep="\t", low_memory=False)
+    check_required_cols(df_md, ["genome_id", "lgenome_path"])
+    summary_path = os.path.join(outdir, "annotation_summary.txt")
+
+    for row in df_md.itertuples():
+        genome_id = row.genome_id
+        in_file_fna_gz = row.lgenome_path
+        outdir_per_genome = os.path.join(
+            outdir,
+            genome_id[0],
+            genome_id[1:4],
+            genome_id[4:7],
+            genome_id[7:10],
+        )
+        try:
+            annotate_single_kofamscan(
+                genome_id,
+                in_file_fna_gz,
+                outdir_per_genome,
+                ko_profiles,
+                ko_list,
+                nthreads,
+                tmp_dir,
+            )
+        except:
+            with open(summary_path, "a") as log:
+                log.write(f"{genome_id}\n")
 
 
 # fmt: off

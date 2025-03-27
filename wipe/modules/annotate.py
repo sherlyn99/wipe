@@ -43,6 +43,36 @@ def annotate_single(
         )
 
 
+def annotate_single_kofamscan(
+    genome_id,
+    in_file_fna_gz,
+    outdir,
+    ko_profiles,
+    ko_list,
+    nthreads,
+    tmp_dir,
+):
+    # outdir_barrnap = os.path.join(outdir, "barrnap_out")
+    # run_barrnap_single(in_file_fna_gz, outdir_barrnap, rrna_cutoff)
+
+    outdir_prodigal = os.path.join(outdir, "prodigal_out")
+    in_file_faa_xz = run_prodigal_single(
+        genome_id, in_file_fna_gz, outdir_prodigal, tmpdir=tmp_dir
+    )
+
+    outdir_kofamscan = os.path.join(outdir, "kofamscan_out")
+    if in_file_faa_xz and os.path.exists(in_file_faa_xz):
+        run_kofamscan_single(
+            genome_id,
+            in_file_faa_xz,
+            outdir_kofamscan,
+            tmp_dir,
+            ko_profiles,
+            ko_list,
+            nthreads,
+        ) 
+
+
 def annotate_multiple(
     metadata, outdir, rrna_cutoff, ko_profiles, ko_list, tmp_dir, nthreads
 ):
