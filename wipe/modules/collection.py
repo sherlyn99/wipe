@@ -61,16 +61,16 @@ def compile_results_checkm2(indir):
 def compile_results_kofamscan(indir):
     dirs = search_dirs(indir, "kofamscan_out")
     dfs = []
-
+    
     for dir in dirs:
-        quality_report_path = search_dirs(dir, "*marker_gene_ct.tsv.xz")[0]
-        if os.path.exists(quality_report_path):
-            df = pd.read_csv(quality_report_path, sep="\t", compression="xz")
+        quality_report_paths = search_dirs(dir, "*marker_gene_ct.tsv.xz")
+        if quality_report_paths:
+            df = pd.read_csv(quality_report_paths[0], sep="\t", compression="xz")
         else:
             gid = "".join(dir.split("/")[-5:-1])
-            df = pd.DataFrame({"genome_id": gid, "marker_gene_ct": 0})
+            df = pd.DataFrame({"genome_id": [gid], "marker_gene_ct": [-1]})
         dfs.append(df)
-
+        
     combined_df = pd.concat(dfs, ignore_index=True)
     return combined_df
 
@@ -81,10 +81,14 @@ def compile_results_barrnap(indir):
     gids = []
 
     for dir in dirs:
-        quality_report_path = search_dirs(dir, "*barrnap.tsv.xz")[0]
-        if os.path.exists(quality_report_path):
+        barrnap_files = search_dirs(dir, "*barrnap.tsv.xz")
+        gid = os.path.basename(barrnap_files[0]).split('_')[0]
+        # gid = "".join(dir.split("/")[-5:-1])
+        gids.append(gid)
+
+        if barrnap_files:
             df_tmp = pd.read_csv(
-                quality_report_path, sep="\t", compression="xz"
+                barrnap_files[0], sep="\t", compression="xz"
             )
             counts = df_tmp["rrna_name"].value_counts()
             desired_order = ["5S_rRNA", "16S_rRNA", "23S_rRNA"]
@@ -96,8 +100,7 @@ def compile_results_barrnap(indir):
             df = pd.DataFrame([[0] * len(columns)], columns=columns, dtype=int)
 
         dfs.append(df)
-        gid = "".join(dir.split("/")[-5:-1])
-        gids.append(gid)
+        
     combined_df = pd.concat(dfs, ignore_index=True)
     combined_df.insert(0, "genome_id", gids)
     return combined_df
@@ -108,7 +111,7 @@ def compile_results_prodigal(indir, coords=True):
     dfs = []
 
     for dir in dirs:
-        proteins_fps = glob(f"{dir}/proteins_*.tsv.xz")
+        proteins_fps = search_dirs(dir, "*proteins_ct.tsv.xz")
         if len(proteins_fps) > 1:
             raise ValueError(
                 f"There is one more protein count file in the directory: {dir}"
@@ -129,7 +132,7 @@ def generate_coords(indir, outfile_fp):
 
     with lzma.open(outfile_fp, mode="wb") as coords_fo:
         for dir in dirs:
-            coords_fps = glob(f"{dir}/coords_*.txt.xz")
+            coords_fps = search_dirs(dir, "*coords.txt.xz")
             if len(coords_fps) > 1:
                 raise ValueError(
                     f"There is one more protein count file in the directory: {dir}"

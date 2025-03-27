@@ -77,7 +77,8 @@ def filter_genome_output(output_file_tsv):
         output_file_tsv, sep="\t", skiprows=2, header=None, names=headers
     ).reset_index(drop=True)
 
-    df = df[df["E-value"] < 1e-40].sort_values(by="KO")
+    # df = df[df["E-value"] < 1e-40].sort_values(by="KO")
+    df = df.sort_values(by="KO") # comment out the e value filter
     df = df[df["score"] >= df["thrshld"]]
     df = df.loc[df.groupby(["KO"])["score"].idxmax()]
 
