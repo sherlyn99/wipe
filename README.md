@@ -1,6 +1,6 @@
-# WIPE (`wipe`)
+# WIPE
 
-**WIPE** is a lightweight CLI toolkit for processing large genome collections (e.g., WoL-style genome indices). It provides batch utilities for genome QC, annotation, summary compilation, and reference/functional database helpers.
+**Web of life Integrated Processing Ecosystem (WIPE)** is a lightweight CLI toolkit for processing large genome collections (e.g., WoL-style genome indices). It provides batch utilities for genome QC, annotation, summary compilation, and reference/functional database helpers.
 
 > Designed for HPC-style workflows where per-genome outputs are written to organized directories and later “compiled” into summary tables.
 
