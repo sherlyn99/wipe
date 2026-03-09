@@ -107,22 +107,6 @@ wipe annotate-ko \
   --nthreads 16
 ```
 
-#### `wipe gen-dm`
-Generate a distance matrix with Bindash2.
-```bash
-wipe gen-dm -i GENOMES_DIR -o OUTDIR --nthreads 16
-```
-
-#### `wipe functiondb`
-DIAMOND-based functional annotation (proteins → UniRef DB).
-```bash
-wipe functiondb \
-  -i PROTEIN_DIR \
-  -db /path/to/uniref.dmnd \
-  -o OUTDIR \
-  -t 16
-```
-
 ---
 
 ## `gsearch` subgroup
