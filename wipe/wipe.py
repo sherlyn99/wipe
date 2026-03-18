@@ -16,6 +16,12 @@ from wipe.modules.utils import load_metadata, run_command, check_required_cols
 from wipe.modules.functiondb import run_functional_annotation
 from wipe.modules.uniref import process_uniref_xml, merge_uniref_maps, extract_uniref_names
 from wipe.modules.bindash import bindash2_gen_dm
+from wipe.modules.functional_db import (
+    download_uniref,
+    download_eggnog,
+    annotate_uniref,
+    annotate_eggnog,
+)
 
 
 # takes in a directory of genomes
@@ -451,6 +457,63 @@ def extract_names(map_file, uniref90_names, uniref50_names, output_names):
     except Exception as e:
         click.echo(f"Error extracting UniRef names: {str(e)}", err=True)
         raise
+
+
+@wipe.group("functional-db")
+def functional_db():
+    """Commands for building functional annotation databases."""
+    pass
+
+
+# fmt: off
+@functional_db.command()
+@click.option("-o", "--outdir", default="dbs", show_default=True,
+              help="Output directory for downloaded databases.")
+@click.option("--uniref/--no-uniref", default=True, show_default=True,
+              help="Download UniRef90 and UniRef50 databases.")
+@click.option("--eggnog/--no-eggnog", default=True, show_default=True,
+              help="Download EggNOG mapper database.")
+# fmt: on
+def download(outdir, uniref, eggnog):
+    """Download functional annotation databases (UniRef and/or EggNOG)."""
+    if not uniref and not eggnog:
+        raise click.UsageError("At least one of --uniref or --eggnog must be enabled.")
+    if uniref:
+        download_uniref(outdir)
+    if eggnog:
+        download_eggnog(outdir)
+
+
+# fmt: off
+@functional_db.command()
+@click.option("-i", "--faa", required=True, type=click.Path(exists=True),
+              help="Input protein FASTA file (.faa).")
+@click.option("-o", "--outdir", required=True,
+              help="Output directory for annotation results.")
+@click.option("--uniref", is_flag=True, default=False,
+              help="Run UniRef annotation.")
+@click.option("--uniref-db", type=click.Path(), default="dbs/uniref", show_default=True,
+              help="Directory containing uniref90.dmnd and uniref50.dmnd.")
+@click.option("--eggnog", is_flag=True, default=False,
+              help="Run EggNOG annotation.")
+@click.option("--eggnog-db", type=click.Path(), default="dbs/eggnog", show_default=True,
+              help="Directory containing the EggNOG mapper database.")
+@click.option("-t", "--threads", default=4, show_default=True,
+              help="Number of threads to use.")
+# fmt: on
+def build(faa, outdir, uniref, uniref_db, eggnog, eggnog_db, threads):
+    """Annotate a .faa file against UniRef and/or EggNOG databases.
+
+    Produces one mapping file per database in the output directory:
+      uniref_map.txt.xz  — ORF -> UniRef ID (merged UniRef90 + UniRef50)
+      eggnog_map.tsv     — ORF -> EggNOG annotations
+    """
+    if not uniref and not eggnog:
+        raise click.UsageError("At least one of --uniref or --eggnog must be specified.")
+    if uniref:
+        annotate_uniref(faa, uniref_db, outdir, threads)
+    if eggnog:
+        annotate_eggnog(faa, eggnog_db, outdir, threads)
 
 
 if __name__ == "__main__":
