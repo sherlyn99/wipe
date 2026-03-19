@@ -120,5 +120,17 @@ def download_eggnog(outdir):
     os.makedirs(eggnog_dir, exist_ok=True)
 
     click.echo("Downloading EggNOG database...")
-    run_command(["download_eggnog_data.py", "-y", "--data_dir", eggnog_dir])
+    run_command([
+        "wget", "-r", "-np", "-nd", "-e", "robots=off",
+        "http://eggnog5.embl.de/download/emapperdb-5.0.2/",
+        "-P", eggnog_dir
+    ])
+    click.echo("Extracting tarballs...")
+    run_command([
+        "cd", eggnog_dir, "&&", "find", ".", "-name", "*.tar.gz", "-exec", "tar", "-xzf", "{}", ";"
+    ])
+    click.echo("Unzipping remaining files...")
+    run_command([
+        "cd", eggnog_dir, "&&", "find", ".", "-name", "*.gz", "-exec", "gunzip", "{}", ";"
+    ])
     click.echo("EggNOG download complete.")
