@@ -33,7 +33,7 @@ class TestFunctionalDbDownload(unittest.TestCase):
 
     @patch("subprocess.run")
     def test_download_eggnog_only(self, mock_run):
-        """--eggnog flag calls download_eggnog_data.py."""
+        """--eggnog downloads all five EggNOG files via wget and extracts each."""
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
         result = self.runner.invoke(
             functional_db_cli,
@@ -41,7 +41,15 @@ class TestFunctionalDbDownload(unittest.TestCase):
         )
         assert result.exit_code == 0, result.output
         calls = mock_run.call_args_list
-        assert any("download_eggnog_data.py" in str(c) for c in calls)
+        expected_files = [
+            "eggnog.db.gz",
+            "eggnog.taxa.tar.gz",
+            "eggnog_proteins.dmnd.gz",
+            "mmseqs.tar.gz",
+            "pfam.tar.gz",
+        ]
+        for filename in expected_files:
+            assert any(filename in str(c) for c in calls), f"{filename} not downloaded"
         assert all("uniref" not in str(c) for c in calls)
 
     @patch("subprocess.run")
@@ -54,11 +62,56 @@ class TestFunctionalDbDownload(unittest.TestCase):
         )
         assert result.exit_code == 0, result.output
         calls = mock_run.call_args_list
-        # uniref90 wget, uniref50 wget, eggnog download
-        assert len(calls) == 3
         assert any("uniref90.fasta.gz" in str(c) for c in calls)
         assert any("uniref50.fasta.gz" in str(c) for c in calls)
-        assert any("download_eggnog_data.py" in str(c) for c in calls)
+        assert any("eggnog.db.gz" in str(c) for c in calls)
+
+    @patch("subprocess.run")
+    def test_download_eggnog_skips_existing_file(self, mock_run):
+        """A file that already exists and is non-empty is not re-downloaded."""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        eggnog_dir = os.path.join(self.test_outdir, "eggnog")
+        os.makedirs(eggnog_dir, exist_ok=True)
+        existing = os.path.join(eggnog_dir, "eggnog.db.gz")
+        with open(existing, "w") as f:
+            f.write("placeholder")
+
+        result = self.runner.invoke(
+            functional_db_cli,
+            ["download", "--no-uniref", "--eggnog", "-o", self.test_outdir],
+        )
+        assert result.exit_code == 0, result.output
+        wget_calls = [c for c in mock_run.call_args_list if "wget" in str(c)]
+        assert all("eggnog.db.gz" not in str(c) for c in wget_calls)
+
+    @patch("subprocess.run")
+    def test_download_eggnog_gz_uses_gunzip(self, mock_run):
+        """Plain .gz files (non-tar) are extracted with gunzip."""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        result = self.runner.invoke(
+            functional_db_cli,
+            ["download", "--no-uniref", "--eggnog", "-o", self.test_outdir],
+        )
+        assert result.exit_code == 0, result.output
+        gunzip_calls = [c for c in mock_run.call_args_list if "gunzip" in str(c)]
+        gunzip_targets = " ".join(str(c) for c in gunzip_calls)
+        assert "eggnog.db.gz" in gunzip_targets
+        assert "eggnog_proteins.dmnd.gz" in gunzip_targets
+
+    @patch("subprocess.run")
+    def test_download_eggnog_tar_uses_tar(self, mock_run):
+        """.tar.gz files are extracted with tar -xzf."""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        result = self.runner.invoke(
+            functional_db_cli,
+            ["download", "--no-uniref", "--eggnog", "-o", self.test_outdir],
+        )
+        assert result.exit_code == 0, result.output
+        tar_calls = [c for c in mock_run.call_args_list if "tar" in str(c) and "-xzf" in str(c)]
+        tar_targets = " ".join(str(c) for c in tar_calls)
+        assert "eggnog.taxa.tar.gz" in tar_targets
+        assert "mmseqs.tar.gz" in tar_targets
+        assert "pfam.tar.gz" in tar_targets
 
     def test_download_neither_fails(self):
         """--no-uniref --no-eggnog should exit with an error."""
