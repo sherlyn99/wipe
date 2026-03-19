@@ -107,30 +107,49 @@ def annotate_eggnog(faa, eggnog_db_dir, outdir, threads):
     click.echo(f"Done. Output: {dest}")
 
 
+_EGGNOG_BASE_URL = "http://eggnog5.embl.de/download/emapperdb-5.0.2/"
+
+_EGGNOG_FILES = [
+    "eggnog.db.gz",
+    "eggnog.taxa.tar.gz",
+    "eggnog_proteins.dmnd.gz",
+    "mmseqs.tar.gz",
+    "pfam.tar.gz",
+]
+
+
+def _file_exists_nonempty(path):
+    return os.path.exists(path) and os.path.getsize(path) > 0
+
+
+def _extract(filepath, dest_dir):
+    if filepath.endswith(".tar.gz"):
+        run_command(["tar", "-xzf", filepath, "-C", dest_dir])
+    elif filepath.endswith(".gz"):
+        run_command(["gunzip", filepath])
+
+
 def download_eggnog(outdir):
     """
-    Download the EggNOG mapper database using download_eggnog_data.py.
+    Download individual EggNOG mapper database files and extract them.
 
-    Requires eggnog-mapper to be installed in the active environment.
+    For each file in the required set, checks whether it already exists and
+    is non-empty in the destination directory. If not, downloads and extracts it.
 
     Args:
-        outdir (str): Destination directory for the EggNOG database.
+        outdir (str): Destination directory; files go into <outdir>/eggnog/.
     """
     eggnog_dir = os.path.join(outdir, "eggnog")
     os.makedirs(eggnog_dir, exist_ok=True)
 
-    click.echo("Downloading EggNOG database...")
-    run_command([
-        "wget", "-r", "-np", "-nd", "-e", "robots=off",
-        "http://eggnog5.embl.de/download/emapperdb-5.0.2/",
-        "-P", eggnog_dir
-    ])
-    click.echo("Extracting tarballs...")
-    run_command([
-        "cd", eggnog_dir, "&&", "find", ".", "-name", "*.tar.gz", "-exec", "tar", "-xzf", "{}", ";"
-    ])
-    click.echo("Unzipping remaining files...")
-    run_command([
-        "cd", eggnog_dir, "&&", "find", ".", "-name", "*.gz", "-exec", "gunzip", "{}", ";"
-    ])
+    for filename in _EGGNOG_FILES:
+        filepath = os.path.join(eggnog_dir, filename)
+        if _file_exists_nonempty(filepath):
+            click.echo(f"  {filename} already exists, skipping.")
+            continue
+        click.echo(f"  Downloading {filename}...")
+        run_command(["wget", "-P", eggnog_dir, _EGGNOG_BASE_URL + filename])
+        click.echo(f"  Extracting {filename}...")
+        _extract(filepath, eggnog_dir)
+
     click.echo("EggNOG download complete.")
