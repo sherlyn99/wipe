@@ -242,8 +242,16 @@ wipe functional-db build \
 **UniRef annotation** (`--uniref`) runs DIAMOND blastp against both uniref90 and uniref50, then merges the hits (preferring uniref90), producing:
 - `annotation_out/uniref_map.txt.xz` — tab-separated `ORF_ID <tab> UniRef_ID`
 
-**EggNOG annotation** (`--eggnog`) runs `emapper.py`, producing:
-- `annotation_out/eggnog_map.tsv` — emapper annotations table (ORFs as rows)
+**EggNOG annotation** (`--eggnog`) runs `emapper.py` and extracts per-annotation mapping files, producing:
+- `annotation_out/eggnog_map.tsv` — full emapper annotations table (ORFs as rows)
+- `annotation_out/orf_to_go.tsv` — ORF → GO term
+- `annotation_out/orf_to_ec.tsv` — ORF → EC number
+- `annotation_out/orf_to_ko.tsv` — ORF → KEGG KO
+- `annotation_out/orf_to_cazy.tsv` — ORF → CAZy family
+- `annotation_out/orf_to_cog.tsv` — ORF → COG category
+- `annotation_out/orf_to_pfam.tsv` — ORF → Pfam domain
+
+All mapping files are tab-separated with one ORF–annotation pair per line (multi-valued fields are expanded into multiple rows).
 
 ### Running the tests
 

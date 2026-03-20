@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 from click.testing import CliRunner
 from wipe.wipe import functional_db as functional_db_cli
+from wipe.modules.functional_db import make_eggnog_mappings
 
 
 class TestFunctionalDbDownload(unittest.TestCase):
@@ -261,11 +262,14 @@ class TestFunctionalDbBuild(unittest.TestCase):
 
     @patch("subprocess.run")
     def test_build_eggnog_renames_annotations(self, mock_run):
-        """eggnog.emapper.annotations is renamed to eggnog_map.tsv."""
+        """eggnog.emapper.annotations is renamed to eggnog_map.tsv and mapping files are created."""
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
         annotations = os.path.join(self.test_outdir, "eggnog.emapper.annotations")
+        header = "#query\tseed_ortholog\tevalue\tscore\teggNOG_OGs\tmax_annot_lvl\tCOG_category\tDescription\tPreferred_name\tGOs\tEC\tKEGG_ko\tKEGG_Pathway\tKEGG_Module\tKEGG_Reaction\tKEGG_rclass\tBRITE\tKEGG_TC\tCAZy\tBiGG_Reaction\tPFAMs\n"
+        row = "G000000001_1\tX\t1e-10\t100\tX\tX\tJ\tdesc\tname\tGO:0001\t1.1.1.1\tko:K00001\t-\t-\t-\t-\t-\t-\tGH1\t-\tPF00001\n"
         with open(annotations, "w") as f:
-            f.write("G000000001_1\tCOG001\n")
+            f.write(header)
+            f.write(row)
 
         result = self.runner.invoke(
             functional_db_cli,
@@ -277,6 +281,9 @@ class TestFunctionalDbBuild(unittest.TestCase):
         assert result.exit_code == 0, result.output
         assert os.path.exists(os.path.join(self.test_outdir, "eggnog_map.tsv"))
         assert not os.path.exists(annotations)
+        for fname in ("orf_to_go.tsv", "orf_to_ec.tsv", "orf_to_ko.tsv",
+                      "orf_to_cazy.tsv", "orf_to_cog.tsv", "orf_to_pfam.tsv"):
+            assert os.path.exists(os.path.join(self.test_outdir, fname)), f"{fname} missing"
 
     @patch("wipe.modules.functional_db.merge_uniref")
     @patch("subprocess.run")
@@ -327,6 +334,84 @@ class TestFunctionalDbBuild(unittest.TestCase):
         assert len(emapper_calls) == 1
 
 
+class TestMakeEggnogMappings(unittest.TestCase):
+    """Unit tests for make_eggnog_mappings using a synthetic annotations file."""
+
+    # Minimal annotations file with one row covering all six annotation types.
+    # Columns (0-based): 0=query, 6=COG_category, 9=GOs, 10=EC, 11=KEGG_ko,
+    #                    18=CAZy, 20=PFAMs
+    HEADER = "#query\tseed_ortholog\tevalue\tscore\teggNOG_OGs\tmax_annot_lvl\tCOG_category\tDescription\tPreferred_name\tGOs\tEC\tKEGG_ko\tKEGG_Pathway\tKEGG_Module\tKEGG_Reaction\tKEGG_rclass\tBRITE\tKEGG_TC\tCAZy\tBiGG_Reaction\tPFAMs\n"
+    ROW = "ORF1\tX\t1e-10\t100\tX\tX\tJK\tdesc\tname\tGO:0001,GO:0002\t1.2.3.4\tko:K00001,ko:K00002\t-\t-\t-\t-\t-\t-\tGH13,GT2\t-\tPF00001,PF00002\n"
+    ROW_EMPTY = "ORF2\tX\t1e-5\t50\tX\tX\t-\tdesc\tname\t-\t-\t-\t-\t-\t-\t-\t-\t-\t-\t-\t-\n"
+
+    def setUp(self):
+        self.outdir = tempfile.mkdtemp()
+        self.annotations = os.path.join(self.outdir, "test.emapper.annotations")
+        with open(self.annotations, "w") as f:
+            f.write(self.HEADER)
+            f.write(self.ROW)
+            f.write(self.ROW_EMPTY)
+
+    def tearDown(self):
+        shutil.rmtree(self.outdir)
+
+    def _read(self, fname):
+        path = os.path.join(self.outdir, fname)
+        with open(path) as f:
+            return [line.rstrip("\n").split("\t") for line in f]
+
+    def test_go_mapping(self):
+        make_eggnog_mappings(self.annotations, self.outdir)
+        rows = self._read("orf_to_go.tsv")
+        assert ["ORF1", "GO:0001"] in rows
+        assert ["ORF1", "GO:0002"] in rows
+        assert all(r[0] != "ORF2" for r in rows)
+
+    def test_ec_mapping(self):
+        make_eggnog_mappings(self.annotations, self.outdir)
+        rows = self._read("orf_to_ec.tsv")
+        assert ["ORF1", "1.2.3.4"] in rows
+
+    def test_ko_mapping(self):
+        make_eggnog_mappings(self.annotations, self.outdir)
+        rows = self._read("orf_to_ko.tsv")
+        assert ["ORF1", "ko:K00001"] in rows
+        assert ["ORF1", "ko:K00002"] in rows
+
+    def test_cazy_mapping(self):
+        make_eggnog_mappings(self.annotations, self.outdir)
+        rows = self._read("orf_to_cazy.tsv")
+        assert ["ORF1", "GH13"] in rows
+        assert ["ORF1", "GT2"] in rows
+
+    def test_cog_mapping_splits_by_character(self):
+        """COG_category 'JK' should produce two rows, one per letter."""
+        make_eggnog_mappings(self.annotations, self.outdir)
+        rows = self._read("orf_to_cog.tsv")
+        assert ["ORF1", "J"] in rows
+        assert ["ORF1", "K"] in rows
+
+    def test_pfam_mapping(self):
+        make_eggnog_mappings(self.annotations, self.outdir)
+        rows = self._read("orf_to_pfam.tsv")
+        assert ["ORF1", "PF00001"] in rows
+        assert ["ORF1", "PF00002"] in rows
+
+    def test_dash_values_skipped(self):
+        """ORF2 has '-' for all annotations and should appear in no mapping file."""
+        make_eggnog_mappings(self.annotations, self.outdir)
+        for fname in ("orf_to_go.tsv", "orf_to_ec.tsv", "orf_to_ko.tsv",
+                      "orf_to_cazy.tsv", "orf_to_cog.tsv", "orf_to_pfam.tsv"):
+            rows = self._read(fname)
+            assert all(r[0] != "ORF2" for r in rows), f"ORF2 should not appear in {fname}"
+
+    def test_all_output_files_created(self):
+        make_eggnog_mappings(self.annotations, self.outdir)
+        for fname in ("orf_to_go.tsv", "orf_to_ec.tsv", "orf_to_ko.tsv",
+                      "orf_to_cazy.tsv", "orf_to_cog.tsv", "orf_to_pfam.tsv"):
+            assert os.path.exists(os.path.join(self.outdir, fname)), f"{fname} missing"
+
+
 class TestFunctionalDbBuildOutputFiles(unittest.TestCase):
     """Integration-style tests using the real example .faa from tests/data/.
 
@@ -350,6 +435,13 @@ class TestFunctionalDbBuildOutputFiles(unittest.TestCase):
         shutil.rmtree(self.uniref_db_dir)
         shutil.rmtree(self.eggnog_db_dir)
 
+    _ANNOT_HEADER = (
+        "#query\tseed_ortholog\tevalue\tscore\teggNOG_OGs\tmax_annot_lvl\t"
+        "COG_category\tDescription\tPreferred_name\tGOs\tEC\tKEGG_ko\t"
+        "KEGG_Pathway\tKEGG_Module\tKEGG_Reaction\tKEGG_rclass\tBRITE\t"
+        "KEGG_TC\tCAZy\tBiGG_Reaction\tPFAMs\n"
+    )
+
     def _fake_run(self, cmd, **kwargs):
         """Simulate external tools by creating their expected output files."""
         if cmd[0] == "diamond":
@@ -366,8 +458,9 @@ class TestFunctionalDbBuildOutputFiles(unittest.TestCase):
             out_idx = cmd.index("--output_dir")
             outdir = cmd[out_idx + 1]
             with open(os.path.join(outdir, "eggnog.emapper.annotations"), "w") as f:
-                f.write("M000000999_1\tCOG001\n")
-                f.write("M000000999_2\tCOG002\n")
+                f.write(self._ANNOT_HEADER)
+                f.write("M000000999_1\tX\t1e-10\t100\tX\tX\tJ\tdesc\tname\tGO:0001\t1.1.1.1\tko:K00001\t-\t-\t-\t-\t-\t-\tGH1\t-\tPF00001\n")
+                f.write("M000000999_2\tX\t1e-5\t50\tX\tX\tK\tdesc\tname\tGO:0002\t2.2.2.2\tko:K00002\t-\t-\t-\t-\t-\t-\tGT2\t-\tPF00002\n")
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     @patch("subprocess.run")
@@ -399,7 +492,7 @@ class TestFunctionalDbBuildOutputFiles(unittest.TestCase):
 
     @patch("subprocess.run")
     def test_build_eggnog_creates_eggnog_map(self, mock_run):
-        """eggnog_map.tsv is created in outdir when --eggnog is used."""
+        """eggnog_map.tsv and all six mapping files are created when --eggnog is used."""
         mock_run.side_effect = self._fake_run
         result = self.runner.invoke(
             functional_db_cli,
@@ -410,6 +503,9 @@ class TestFunctionalDbBuildOutputFiles(unittest.TestCase):
         )
         assert result.exit_code == 0, result.output
         assert os.path.exists(os.path.join(self.test_outdir, "eggnog_map.tsv"))
+        for fname in ("orf_to_go.tsv", "orf_to_ec.tsv", "orf_to_ko.tsv",
+                      "orf_to_cazy.tsv", "orf_to_cog.tsv", "orf_to_pfam.tsv"):
+            assert os.path.exists(os.path.join(self.test_outdir, fname)), f"{fname} missing"
 
     @patch("subprocess.run")
     def test_build_eggnog_no_extra_files(self, mock_run):

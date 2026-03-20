@@ -89,11 +89,71 @@ def annotate_uniref(faa, uniref_db_dir, outdir, threads):
     click.echo(f"Done. Output: {merged}.xz")
 
 
+# (output filename, 0-based column index, split character-by-character)
+_EGGNOG_MAPPINGS = [
+    ("orf_to_go.tsv",   9,  False),  # GOs          — comma-separated
+    ("orf_to_ec.tsv",   10, False),  # EC            — comma-separated
+    ("orf_to_ko.tsv",   11, False),  # KEGG_ko       — comma-separated
+    ("orf_to_cazy.tsv", 18, False),  # CAZy          — comma-separated
+    ("orf_to_cog.tsv",  6,  True),   # COG_category  — one letter per category
+    ("orf_to_pfam.tsv", 20, False),  # PFAMs         — comma-separated
+]
+
+
+def make_eggnog_mappings(annotations_path, outdir):
+    """
+    Parse an emapper annotations file and write individual ORF-to-annotation
+    mapping files for GO, EC, KO, CAZy, COG, and Pfam.
+
+    Each output file contains two tab-separated columns: ORF ID and annotation
+    value, with one row per ORF-value pair (multi-valued fields are expanded).
+
+    Args:
+        annotations_path (str): Path to the .emapper.annotations file.
+        outdir (str): Output directory for the mapping files.
+    """
+    handles = {
+        fname: open(os.path.join(outdir, fname), "w")
+        for fname, _, _ in _EGGNOG_MAPPINGS
+    }
+    try:
+        with open(annotations_path) as f:
+            for line in f:
+                if line.startswith("#"):
+                    continue
+                fields = line.rstrip("\n").split("\t")
+                orf = fields[0]
+                for fname, col, by_char in _EGGNOG_MAPPINGS:
+                    if col >= len(fields):
+                        continue
+                    val = fields[col]
+                    if not val or val == "-":
+                        continue
+                    values = list(val) if by_char else val.split(",")
+                    for v in values:
+                        v = v.strip()
+                        if v and v != "-":
+                            handles[fname].write(f"{orf}\t{v}\n")
+    finally:
+        for h in handles.values():
+            h.close()
+
+    click.echo(f"  Wrote {len(_EGGNOG_MAPPINGS)} mapping files to {outdir}.")
+
+
 def annotate_eggnog(faa, eggnog_db_dir, outdir, threads):
     """
-    Annotate a .faa file against the EggNOG database using emapper.py.
+    Annotate a .faa file against the EggNOG database using emapper.py, then
+    extract individual ORF-to-annotation mapping files.
 
-    Produces outdir/eggnog_map.tsv (renamed from emapper's .annotations output).
+    Produces in outdir:
+      eggnog_map.tsv      — full emapper annotations table
+      orf_to_go.tsv       — ORF -> GO term
+      orf_to_ec.tsv       — ORF -> EC number
+      orf_to_ko.tsv       — ORF -> KEGG KO
+      orf_to_cazy.tsv     — ORF -> CAZy family
+      orf_to_cog.tsv      — ORF -> COG category
+      orf_to_pfam.tsv     — ORF -> Pfam domain
 
     Args:
         faa (str): Path to input protein FASTA file.
@@ -116,6 +176,8 @@ def annotate_eggnog(faa, eggnog_db_dir, outdir, threads):
     annotations = os.path.join(outdir, "eggnog.emapper.annotations")
     dest = os.path.join(outdir, "eggnog_map.tsv")
     if os.path.exists(annotations):
+        click.echo("Extracting per-annotation mappings...")
+        make_eggnog_mappings(annotations, outdir)
         shutil.move(annotations, dest)
     click.echo(f"Done. Output: {dest}")
 
