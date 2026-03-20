@@ -191,27 +191,28 @@ End-to-end helpers for downloading and running functional annotation databases (
 
 ### `wipe functional-db download`
 
-Download UniRef90 + UniRef50 FASTAs and/or the EggNOG mapper database. Both are enabled by default.
+Download UniRef90 + UniRef50 FASTAs and build their DIAMOND databases, and/or download the EggNOG mapper database. Both are enabled by default.
 
 ```bash
-# download everything into dbs/ (default location)
+# download and build everything into dbs/ (default location)
 wipe functional-db download
 
-# download into a custom directory
-wipe functional-db download -o /path/to/dbs
+# use more threads for the diamond makedb step
+wipe functional-db download -t 32
 
-# download only UniRef
-wipe functional-db download --no-eggnog
+# download into a custom directory
+wipe functional-db download -o /path/to/dbs -t 32
+
+# download and build only UniRef
+wipe functional-db download --no-eggnog -t 32
 
 # download only EggNOG
 wipe functional-db download --no-uniref
 ```
 
-Downloaded files are placed under:
-- `<outdir>/uniref/` — `uniref90.fasta.gz`, `uniref50.fasta.gz`
+Output files are placed under:
+- `<outdir>/uniref/` — `uniref90.fasta.gz`, `uniref90.dmnd`, `uniref50.fasta.gz`, `uniref50.dmnd`
 - `<outdir>/eggnog/` — EggNOG mapper database files
-
-> **Note:** Building DIAMOND databases from the UniRef FASTAs is a separate step handled by `wipe uniref build`.
 
 ### `wipe functional-db build`
 

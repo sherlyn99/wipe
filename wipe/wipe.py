@@ -470,16 +470,18 @@ def functional_db():
 @click.option("-o", "--outdir", default="dbs", show_default=True,
               help="Output directory for downloaded databases.")
 @click.option("--uniref/--no-uniref", default=True, show_default=True,
-              help="Download UniRef90 and UniRef50 databases.")
+              help="Download UniRef90/50 FASTAs and build DIAMOND databases.")
 @click.option("--eggnog/--no-eggnog", default=True, show_default=True,
               help="Download EggNOG mapper database.")
+@click.option("-t", "--threads", default=4, show_default=True,
+              help="Number of threads for building DIAMOND databases.")
 # fmt: on
-def download(outdir, uniref, eggnog):
+def download(outdir, uniref, eggnog, threads):
     """Download functional annotation databases (UniRef and/or EggNOG)."""
     if not uniref and not eggnog:
         raise click.UsageError("At least one of --uniref or --eggnog must be enabled.")
     if uniref:
-        download_uniref(outdir)
+        download_uniref(outdir, threads)
     if eggnog:
         download_eggnog(outdir)
 

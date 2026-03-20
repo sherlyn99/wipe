@@ -6,12 +6,14 @@ from wipe.modules.utils import run_command
 from wipe.modules.functiondb import merge_uniref
 
 
-def download_uniref(outdir):
+def download_uniref(outdir, threads=4):
     """
-    Download UniRef90 and UniRef50 FASTA files from the UniProt FTP server.
+    Download UniRef90 and UniRef50 FASTA files from the UniProt FTP server
+    and build DIAMOND databases from each.
 
     Args:
-        outdir (str): Destination directory for downloaded files.
+        outdir (str): Destination directory; files go into <outdir>/uniref/.
+        threads (int): Number of threads for diamond makedb.
     """
     uniref_dir = os.path.join(outdir, "uniref")
     os.makedirs(uniref_dir, exist_ok=True)
@@ -21,9 +23,20 @@ def download_uniref(outdir):
             f"ftp://ftp.uniprot.org/pub/databases/uniprot/current_release/"
             f"uniref/uniref{level}/uniref{level}.fasta.gz"
         )
+        fasta = os.path.join(uniref_dir, f"uniref{level}.fasta.gz")
+        dmnd = os.path.join(uniref_dir, f"uniref{level}.dmnd")
+
         click.echo(f"Downloading UniRef{level} FASTA...")
         run_command(["wget", "-P", uniref_dir, url])
-        click.echo(f"UniRef{level} download complete.")
+
+        click.echo(f"Building UniRef{level} DIAMOND database...")
+        run_command([
+            "diamond", "makedb",
+            "--in", fasta,
+            "--db", dmnd,
+            "--threads", str(threads),
+        ])
+        click.echo(f"UniRef{level} database ready.")
 
 
 def annotate_uniref(faa, uniref_db_dir, outdir, threads):
