@@ -506,9 +506,18 @@ def download(outdir, uniref, eggnog, threads):
 def build(faa, outdir, uniref, uniref_db, eggnog, eggnog_db, threads):
     """Annotate a .faa file against UniRef and/or EggNOG databases.
 
-    Produces one mapping file per database in the output directory:
+    UniRef output (--uniref):
       uniref_map.txt.xz  — ORF -> UniRef ID (merged UniRef90 + UniRef50)
-      eggnog_map.tsv     — ORF -> EggNOG annotations
+      uniref_names.txt   — UniRef ID -> cluster name (if names TSVs present in DB dir)
+
+    EggNOG output (--eggnog):
+      eggnog_map.tsv     — full emapper annotations table
+      orf_to_go.tsv      — ORF -> GO term
+      orf_to_ec.tsv      — ORF -> EC number
+      orf_to_ko.tsv      — ORF -> KEGG KO
+      orf_to_cazy.tsv    — ORF -> CAZy family
+      orf_to_cog.tsv     — ORF -> COG category
+      orf_to_pfam.tsv    — ORF -> Pfam domain
     """
     if not uniref and not eggnog:
         raise click.UsageError("At least one of --uniref or --eggnog must be specified.")

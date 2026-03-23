@@ -7,7 +7,9 @@ from pathlib import Path
 from unittest.mock import patch
 from click.testing import CliRunner
 from wipe.wipe import functional_db as functional_db_cli
-from wipe.modules.functional_db import make_eggnog_mappings
+from wipe.modules.functional_db import make_eggnog_mappings, annotate_uniref, annotate_eggnog
+
+_HERE = os.path.dirname(__file__)
 
 
 class TestFunctionalDbDownload(unittest.TestCase):
@@ -18,9 +20,10 @@ class TestFunctionalDbDownload(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.test_outdir)
 
+    @patch("wipe.modules.functional_db.process_uniref_xml")
     @patch("subprocess.run")
-    def test_download_uniref_only(self, mock_run):
-        """--uniref downloads uniref90/50 via wget and builds diamond databases."""
+    def test_download_uniref_only(self, mock_run, mock_process_xml):
+        """--uniref downloads uniref90/50 FASTAs and XMLs, extracts names, and builds diamond databases."""
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
         result = self.runner.invoke(
             functional_db_cli,
@@ -30,10 +33,16 @@ class TestFunctionalDbDownload(unittest.TestCase):
         calls = mock_run.call_args_list
         assert any("uniref90.fasta.gz" in str(c) for c in calls)
         assert any("uniref50.fasta.gz" in str(c) for c in calls)
+        assert any("uniref90.xml.gz" in str(c) for c in calls)
+        assert any("uniref50.xml.gz" in str(c) for c in calls)
         assert any("uniref90.dmnd" in str(c) for c in calls)
         assert any("uniref50.dmnd" in str(c) for c in calls)
         diamond_calls = [c for c in calls if "diamond" in str(c) and "makedb" in str(c)]
         assert len(diamond_calls) == 2
+        assert mock_process_xml.call_count == 2
+        xml_calls = mock_process_xml.call_args_list
+        assert any("uniref90.xml.gz" in str(c) and "uniref90_names.tsv" in str(c) for c in xml_calls)
+        assert any("uniref50.xml.gz" in str(c) and "uniref50_names.tsv" in str(c) for c in xml_calls)
         assert all("download_eggnog_data.py" not in str(c) for c in calls)
 
     @patch("subprocess.run")
@@ -57,8 +66,9 @@ class TestFunctionalDbDownload(unittest.TestCase):
             assert any(filename in str(c) for c in calls), f"{filename} not downloaded"
         assert all("uniref" not in str(c) for c in calls)
 
+    @patch("wipe.modules.functional_db.process_uniref_xml")
     @patch("subprocess.run")
-    def test_download_both_by_default(self, mock_run):
+    def test_download_both_by_default(self, mock_run, mock_process_xml):
         """Both databases are downloaded when no flags are given (default True)."""
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
         result = self.runner.invoke(
@@ -126,8 +136,9 @@ class TestFunctionalDbDownload(unittest.TestCase):
         )
         assert result.exit_code != 0
 
+    @patch("wipe.modules.functional_db.process_uniref_xml")
     @patch("subprocess.run")
-    def test_download_uniref_creates_subdirectory(self, mock_run):
+    def test_download_uniref_creates_subdirectory(self, mock_run, mock_process_xml):
         """download_uniref creates dbs/uniref/ subdirectory."""
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
         result = self.runner.invoke(
@@ -219,6 +230,49 @@ class TestFunctionalDbBuild(unittest.TestCase):
         )
         mock_merge.assert_called_once()
         assert mock_merge.call_args[1].get("simplify") is True
+
+    @patch("wipe.modules.functional_db.extract_uniref_names")
+    @patch("wipe.modules.functional_db.merge_uniref")
+    @patch("subprocess.run")
+    def test_build_uniref_extracts_names_when_present(self, mock_run, mock_merge, mock_extract):
+        """extract_uniref_names is called when name TSVs exist in uniref_db_dir."""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        merged = os.path.join(self.test_outdir, "uniref_map.txt")
+        mock_merge.side_effect = lambda *a, **kw: Path(merged).touch()
+        Path(os.path.join(self.uniref_db_dir, "uniref90_names.tsv")).touch()
+        Path(os.path.join(self.uniref_db_dir, "uniref50_names.tsv")).touch()
+
+        self.runner.invoke(
+            functional_db_cli,
+            [
+                "build", "-i", self.faa, "-o", self.test_outdir,
+                "--uniref", "--uniref-db", self.uniref_db_dir,
+            ],
+        )
+        mock_extract.assert_called_once()
+        args = mock_extract.call_args[0]
+        assert args[0] == merged
+        assert "uniref90_names.tsv" in args[1]
+        assert "uniref50_names.tsv" in args[2]
+        assert args[3] == os.path.join(self.test_outdir, "uniref_names.txt")
+
+    @patch("wipe.modules.functional_db.extract_uniref_names")
+    @patch("wipe.modules.functional_db.merge_uniref")
+    @patch("subprocess.run")
+    def test_build_uniref_skips_names_when_absent(self, mock_run, mock_merge, mock_extract):
+        """extract_uniref_names is not called when name TSVs are missing."""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        merged = os.path.join(self.test_outdir, "uniref_map.txt")
+        mock_merge.side_effect = lambda *a, **kw: Path(merged).touch()
+
+        self.runner.invoke(
+            functional_db_cli,
+            [
+                "build", "-i", self.faa, "-o", self.test_outdir,
+                "--uniref", "--uniref-db", self.uniref_db_dir,
+            ],
+        )
+        mock_extract.assert_not_called()
 
     @patch("wipe.modules.functional_db.merge_uniref")
     @patch("subprocess.run")
@@ -477,6 +531,25 @@ class TestFunctionalDbBuildOutputFiles(unittest.TestCase):
         assert result.exit_code == 0, result.output
         assert os.path.exists(os.path.join(self.test_outdir, "uniref_map.txt.xz"))
 
+    @patch("wipe.modules.functional_db.extract_uniref_names")
+    @patch("subprocess.run")
+    def test_build_uniref_creates_names_file_when_tsv_present(self, mock_run, mock_extract):
+        """uniref_names.txt is created when name TSVs exist in uniref_db_dir."""
+        mock_run.side_effect = self._fake_run
+        Path(os.path.join(self.uniref_db_dir, "uniref90_names.tsv")).touch()
+        Path(os.path.join(self.uniref_db_dir, "uniref50_names.tsv")).touch()
+
+        result = self.runner.invoke(
+            functional_db_cli,
+            [
+                "build", "-i", self.FAA, "-o", self.test_outdir,
+                "--uniref", "--uniref-db", self.uniref_db_dir,
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        mock_extract.assert_called_once()
+        assert mock_extract.call_args[0][3] == os.path.join(self.test_outdir, "uniref_names.txt")
+
     @patch("subprocess.run")
     def test_build_uniref_no_extra_files(self, mock_run):
         """Running --uniref does not create eggnog_map.tsv."""
@@ -537,78 +610,127 @@ class TestFunctionalDbBuildOutputFiles(unittest.TestCase):
         assert os.path.exists(os.path.join(self.test_outdir, "eggnog_map.tsv"))
 
 
-_UNIREF_DB = "dbs/uniref"
-_EGGNOG_DB = "dbs/eggnog"
-_UNIREF_READY = (
-    os.path.exists(os.path.join(_UNIREF_DB, "uniref90.dmnd"))
-    and os.path.exists(os.path.join(_UNIREF_DB, "uniref50.dmnd"))
-)
-_EGGNOG_READY = os.path.exists(os.path.join(_EGGNOG_DB, "eggnog.db"))
+class TestFunctionalDbBuildSubset(unittest.TestCase):
+    """Integration tests using real (tiny) databases stored in tests/data/.
 
-
-class TestFunctionalDbBuildReal(unittest.TestCase):
-    """End-to-end tests that run real tools against real databases.
-
-    Skipped automatically when the required databases are not present.
-    Run 'wipe functional-db download' followed by 'wipe uniref build' first.
+    These tests run real DIAMOND blastp against a 2-sequence subset UniRef
+    database so no mocking of external tools is needed for the UniRef path.
+    For EggNOG, emapper.py is replaced by a side-effect that copies the
+    pre-baked annotations fixture, letting all Python-side logic run for real.
     """
 
-    FAA = "tests/data/M000000999_subset.faa"
+    FAA = os.path.join(_HERE, "data", "M000000999_subset.faa")
+    UNIREF_DB_DIR = os.path.join(_HERE, "data", "uniref")
+    EGGNOG_ANNOT_FIXTURE = os.path.join(_HERE, "data", "eggnog", "eggnog_test.emapper.annotations")
 
     def setUp(self):
-        self.runner = CliRunner()
-        self.test_outdir = tempfile.mkdtemp()
+        self.outdir = tempfile.mkdtemp()
 
     def tearDown(self):
-        shutil.rmtree(self.test_outdir)
+        shutil.rmtree(self.outdir)
 
-    @unittest.skipUnless(_UNIREF_READY, "UniRef diamond databases not found in dbs/uniref/")
-    def test_build_uniref_real(self):
-        """build --uniref produces a non-empty uniref_map.txt.xz."""
-        result = self.runner.invoke(
-            functional_db_cli,
-            [
-                "build", "-i", self.FAA, "-o", self.test_outdir,
-                "--uniref", "--uniref-db", _UNIREF_DB,
-            ],
-        )
-        assert result.exit_code == 0, result.output
-        out = os.path.join(self.test_outdir, "uniref_map.txt.xz")
-        assert os.path.exists(out), "uniref_map.txt.xz was not created"
-        assert os.path.getsize(out) > 0, "uniref_map.txt.xz is empty"
+    # ------------------------------------------------------------------
+    # UniRef tests — fully real (diamond + merge_uniref + xz)
+    # ------------------------------------------------------------------
 
-    @unittest.skipUnless(_EGGNOG_READY, "EggNOG database not found in dbs/eggnog/")
-    def test_build_eggnog_real(self):
-        """build --eggnog produces a non-empty eggnog_map.tsv."""
-        result = self.runner.invoke(
-            functional_db_cli,
-            [
-                "build", "-i", self.FAA, "-o", self.test_outdir,
-                "--eggnog", "--eggnog-db", _EGGNOG_DB,
-            ],
-        )
-        assert result.exit_code == 0, result.output
-        out = os.path.join(self.test_outdir, "eggnog_map.tsv")
-        assert os.path.exists(out), "eggnog_map.tsv was not created"
-        assert os.path.getsize(out) > 0, "eggnog_map.tsv is empty"
+    def test_uniref_produces_compressed_map(self):
+        """annotate_uniref creates a non-empty uniref_map.txt.xz."""
+        annotate_uniref(self.FAA, self.UNIREF_DB_DIR, self.outdir, threads=1)
+        out = os.path.join(self.outdir, "uniref_map.txt.xz")
+        self.assertTrue(os.path.exists(out), "uniref_map.txt.xz not created")
+        self.assertGreater(os.path.getsize(out), 0, "uniref_map.txt.xz is empty")
 
-    @unittest.skipUnless(
-        _UNIREF_READY and _EGGNOG_READY,
-        "UniRef and/or EggNOG databases not found",
-    )
-    def test_build_both_real(self):
-        """build --uniref --eggnog produces both output files."""
-        result = self.runner.invoke(
-            functional_db_cli,
-            [
-                "build", "-i", self.FAA, "-o", self.test_outdir,
-                "--uniref", "--uniref-db", _UNIREF_DB,
-                "--eggnog", "--eggnog-db", _EGGNOG_DB,
-            ],
+    def test_uniref_map_contains_both_orfs(self):
+        """Both ORFs in the test FAA appear in the merged map."""
+        annotate_uniref(self.FAA, self.UNIREF_DB_DIR, self.outdir, threads=1)
+        import lzma
+        with lzma.open(os.path.join(self.outdir, "uniref_map.txt.xz"), "rt") as f:
+            content = f.read()
+        self.assertIn("M000000999_1", content)
+        self.assertIn("M000000999_2", content)
+
+    def test_uniref_names_extracted_when_tsv_present(self):
+        """uniref_names.txt is created because the test DB has names TSVs."""
+        annotate_uniref(self.FAA, self.UNIREF_DB_DIR, self.outdir, threads=1)
+        names_file = os.path.join(self.outdir, "uniref_names.txt")
+        self.assertTrue(os.path.exists(names_file), "uniref_names.txt not created")
+        with open(names_file) as f:
+            content = f.read()
+        self.assertTrue(len(content.strip()) > 0, "uniref_names.txt is empty")
+
+    def test_uniref_simplified_ids(self):
+        """Merged map uses simplified IDs (part after '_' in UniRef header)."""
+        annotate_uniref(self.FAA, self.UNIREF_DB_DIR, self.outdir, threads=1)
+        import lzma
+        with lzma.open(os.path.join(self.outdir, "uniref_map.txt.xz"), "rt") as f:
+            ids = [line.strip().split("\t")[1] for line in f if line.strip()]
+        # Simplified IDs should not contain "UniRef" prefix
+        for uid in ids:
+            self.assertNotIn("UniRef", uid, f"ID not simplified: {uid}")
+
+    # ------------------------------------------------------------------
+    # EggNOG tests — real Python pipeline, mocked emapper.py call
+    # ------------------------------------------------------------------
+
+    def _fake_emapper(self, cmd, **kwargs):
+        """Copy pre-baked annotations fixture to emapper's expected output path."""
+        out_idx = cmd.index("--output_dir")
+        outdir = cmd[out_idx + 1]
+        dest = os.path.join(outdir, "eggnog.emapper.annotations")
+        shutil.copy(self.EGGNOG_ANNOT_FIXTURE, dest)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    @patch("subprocess.run")
+    def test_eggnog_creates_map_and_per_annotation_files(self, mock_run):
+        """annotate_eggnog creates eggnog_map.tsv and all six orf_to_*.tsv files."""
+        mock_run.side_effect = self._fake_emapper
+        annotate_eggnog(self.FAA, os.path.join(_HERE, "data", "eggnog"), self.outdir, threads=1)
+        self.assertTrue(os.path.exists(os.path.join(self.outdir, "eggnog_map.tsv")))
+        for fname in ("orf_to_go.tsv", "orf_to_ec.tsv", "orf_to_ko.tsv",
+                      "orf_to_cazy.tsv", "orf_to_cog.tsv", "orf_to_pfam.tsv"):
+            self.assertTrue(
+                os.path.exists(os.path.join(self.outdir, fname)),
+                f"{fname} was not created",
+            )
+
+    @patch("subprocess.run")
+    def test_eggnog_map_content(self, mock_run):
+        """eggnog_map.tsv contains the two ORF rows from the fixture."""
+        mock_run.side_effect = self._fake_emapper
+        annotate_eggnog(self.FAA, os.path.join(_HERE, "data", "eggnog"), self.outdir, threads=1)
+        with open(os.path.join(self.outdir, "eggnog_map.tsv")) as f:
+            content = f.read()
+        self.assertIn("M000000999_1", content)
+        self.assertIn("M000000999_2", content)
+
+    @patch("subprocess.run")
+    def test_eggnog_mapping_file_content(self, mock_run):
+        """orf_to_go.tsv and orf_to_cog.tsv have correct entries from fixture."""
+        mock_run.side_effect = self._fake_emapper
+        annotate_eggnog(self.FAA, os.path.join(_HERE, "data", "eggnog"), self.outdir, threads=1)
+
+        with open(os.path.join(self.outdir, "orf_to_go.tsv")) as f:
+            go_rows = [line.strip().split("\t") for line in f]
+        go_ids = {row[1] for row in go_rows}
+        self.assertIn("GO:0008150", go_ids)
+        self.assertIn("GO:0055114", go_ids)
+
+        with open(os.path.join(self.outdir, "orf_to_cog.tsv")) as f:
+            cog_rows = [line.strip().split("\t") for line in f]
+        cog_ids = {row[1] for row in cog_rows}
+        self.assertIn("S", cog_ids)
+        self.assertIn("C", cog_ids)
+        self.assertIn("P", cog_ids)
+
+    @patch("subprocess.run")
+    def test_eggnog_original_annotations_removed(self, mock_run):
+        """eggnog.emapper.annotations is moved to eggnog_map.tsv (not left behind)."""
+        mock_run.side_effect = self._fake_emapper
+        annotate_eggnog(self.FAA, os.path.join(_HERE, "data", "eggnog"), self.outdir, threads=1)
+        self.assertFalse(
+            os.path.exists(os.path.join(self.outdir, "eggnog.emapper.annotations")),
+            "Original annotations file should have been renamed",
         )
-        assert result.exit_code == 0, result.output
-        assert os.path.exists(os.path.join(self.test_outdir, "uniref_map.txt.xz"))
-        assert os.path.exists(os.path.join(self.test_outdir, "eggnog_map.tsv"))
 
 
 if __name__ == "__main__":

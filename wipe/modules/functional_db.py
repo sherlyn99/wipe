@@ -4,6 +4,7 @@ import tempfile
 import click
 from wipe.modules.utils import run_command
 from wipe.modules.functiondb import merge_uniref
+from wipe.modules.uniref import process_uniref_xml, extract_uniref_names
 
 
 def download_uniref(outdir, threads=4):
@@ -18,16 +19,23 @@ def download_uniref(outdir, threads=4):
     uniref_dir = os.path.join(outdir, "uniref")
     os.makedirs(uniref_dir, exist_ok=True)
 
+    base = "ftp://ftp.uniprot.org/pub/databases/uniprot/current_release/uniref"
+
     for level in ("90", "50"):
-        url = (
-            f"ftp://ftp.uniprot.org/pub/databases/uniprot/current_release/"
-            f"uniref/uniref{level}/uniref{level}.fasta.gz"
-        )
         fasta = os.path.join(uniref_dir, f"uniref{level}.fasta.gz")
         dmnd = os.path.join(uniref_dir, f"uniref{level}.dmnd")
 
         click.echo(f"Downloading UniRef{level} FASTA...")
-        run_command(["wget", "-P", uniref_dir, url])
+        run_command(["wget", "-P", uniref_dir, f"{base}/uniref{level}/uniref{level}.fasta.gz"])
+
+        xml = os.path.join(uniref_dir, f"uniref{level}.xml.gz")
+        names_tsv = os.path.join(uniref_dir, f"uniref{level}_names.tsv")
+
+        click.echo(f"Downloading UniRef{level} XML...")
+        run_command(["wget", "-P", uniref_dir, f"{base}/uniref{level}/uniref{level}.xml.gz"])
+
+        click.echo(f"Extracting UniRef{level} names...")
+        process_uniref_xml(xml, names_tsv)
 
         click.echo(f"Building UniRef{level} DIAMOND database...")
         run_command([
@@ -42,10 +50,12 @@ def download_uniref(outdir, threads=4):
 def annotate_uniref(faa, uniref_db_dir, outdir, threads):
     """
     Annotate a .faa file against UniRef90 and UniRef50 using DIAMOND blastp,
-    then merge the hits into a single ORF -> UniRef ID map.
+    merge the hits into a single ORF -> UniRef ID map, and optionally extract
+    UniRef names if name TSVs are present in uniref_db_dir.
 
     Expects uniref_db_dir to contain uniref90.dmnd and uniref50.dmnd.
-    Produces outdir/uniref_map.txt.xz.
+    If uniref90_names.tsv and uniref50_names.tsv are also present (produced by
+    'functional-db download'), additionally produces outdir/uniref_names.txt.
 
     Args:
         faa (str): Path to input protein FASTA file.
@@ -83,6 +93,22 @@ def annotate_uniref(faa, uniref_db_dir, outdir, threads):
         merged = os.path.join(outdir, "uniref_map.txt")
         click.echo("Merging UniRef90 and UniRef50 hits...")
         merge_uniref(m8_paths["90"], m8_paths["50"], merged, simplify=True)
+
+    names90 = os.path.join(uniref_db_dir, "uniref90_names.tsv")
+    names50 = os.path.join(uniref_db_dir, "uniref50_names.tsv")
+    if os.path.exists(names90) and os.path.exists(names50):
+        click.echo("Extracting UniRef names...")
+        extract_uniref_names(
+            merged,
+            names90,
+            names50,
+            os.path.join(outdir, "uniref_names.txt"),
+        )
+    else:
+        click.echo(
+            "Skipping name extraction: uniref90_names.tsv / uniref50_names.tsv "
+            "not found in uniref_db_dir. Run 'functional-db download' to generate them."
+        )
 
     click.echo("Compressing uniref_map.txt...")
     run_command(["xz", merged])
